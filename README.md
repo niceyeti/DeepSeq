@@ -56,13 +56,14 @@ And a noverry waskering day it was for each and all, without distinction...
 #gru-loss {
     height:100px;
     line-height:100px;
+	text-align: center;
 }
 
 #gru-loss img {
     vertical-align:middle;
     max-height:100%;
 }
-#gru-loss.em {
+#gru-loss em {
 	text-align: center;
     vertical-align:middle;
     max-height:100%;
