@@ -18,8 +18,8 @@ Folders:<br />
 Training data is Treasure Island, by Robert Louis Stevenson.
 
 <div id="gru-loss">
-    <img />
-*One-hot character-prediction gru loss with non-optimized params/model size. Purty neat!*
+    <img src="resources/pytorch_gru_error.png"/>
+	<it>One-hot character-prediction gru loss with non-optimized params/model size. Purty neat!</it>
 </div>
 
 
