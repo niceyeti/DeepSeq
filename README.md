@@ -57,15 +57,3 @@ which is just a basic set of non-optimized params and validation-less training.
 ```
 And a noverry waskering day it was for each and all, without distinction...
 
-# gru-loss {
-    height:100px;
-    line-height:100px;
-	text-align: center;
-	vertical-align:middle;
-}
-
-# gru-loss img {
-    vertical-align:middle;
-    max-height:100%;
-}
-
