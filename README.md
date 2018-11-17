@@ -10,15 +10,20 @@ Models and implementations
 3) Torch gru implementation for one-hot encoded symbol sequences
 
 Folders:<br />
-./resources: junk folder for images, etc.<br />
-./models: saved parameters<br />
-./ : code<br />
-./data: training data<br />
+  ./resources : junk folder for images, etc.<br />
+  ./models    : saved parameters<br />
+  ./          : code<br />
+  ./data      : training data<br />
 
 Training data is Treasure Island, by Robert Louis Stevenson.
 
-![gru error](resources/pytorch_gru_error.png)
+<div id="gru-loss">
+    <img />
 *One-hot character-prediction gru loss with non-optimized params/model size. Purty neat!*
+</div>
+
+
+
 
 Gru character generation after modest training below. This model was training purely on character-by-character transitions
 but shows performance beyond mere bigram training due to the gru's hidden state. Regenerate locally with
@@ -50,3 +55,13 @@ which is just a basic set of non-optimized params and validation-less training.
 	so waskering$doullyour$$$d$$$$$<
 ```
 And a noverry waskering day it was...
+
+#gru-loss {
+    height:100px;
+    line-height:100px;
+}
+
+#gru-loss img {
+    vertical-align:middle;
+    max-height:100%;
+}
