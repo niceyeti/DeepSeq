@@ -1,0 +1,34 @@
+	python3 BPTT.py -batchSize=4 -maxEpochs=2000 -momentum=0.9 -eta=1E-3 -hiddenUnits=25
+	...
+	1649 2.7261360764503477
+	1699 2.703751826286316
+	1749 2.6933610081672668
+	1799 2.730964684486389
+	1849 2.6367283701896667
+	1899 2.6822508335113526
+	1949 2.603130030632019
+	1999 2.6193048477172853
+	Generating 10 sequences with stochastic=True
+	^ztf^^e^^lzyt^q^zvfff^qvcjzxqmz<
+	ydpzms^xsfbtjjjtjbpswdvpambawjq<
+	ioovff^n^u^rt^wxamvbvzb^w^lpvwf<
+	^npsbsu^zasaotaza^fjqvftamawpzz<
+	ts^^lnwfawnuhaoszzpmzhpmzzzaovp<
+	mfp^h^luhf^uoom^hp^zazppztpmfps<
+	jjjectpfmauswjznvfieovbvatodmva<
+	id bfmfuh$hpzmeoumjnptjjcpnpffz<
+	wet^gv^t^y^xjljjbowfmvtit^hjxuw<
+	kbqeouomoooooemgujeodoqvxzpz^da<
+	Generating 10 sequences with stochastic=False
+	zor wastherryound wasther$$$dly<
+	ver and thering ther$$d$$d$$$d$<
+	oun waskering$$drorky$$$$$d$$$$<
+	noverry wasker$$d$$d$$$d$$$$d$$<
+	ran her wastherr$$d$$d$$$$$$$$$<
+	wand wastherryound$urker$$$d$$$<
+	kand wastherring ther$$$d$$$$d$<
+	ran her wastherr$$d$$d$$$$$$$$$<
+	ghe wastherryound$urrery$$$d$$$<
+	so waskering$doullyour$$$d$$$$$<
+
+
