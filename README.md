@@ -17,6 +17,7 @@ Models and implementations
 Training data is Treasure Island, by Robert Louis Stevenson.
 
 ![gru error](resources/pytorch_gru_error.png)
+*One-hot character-prediction gru loss with non-optimized params/model size. Purty neat!*
 
 Gru character generation after modest training below. This model was training purely on character-by-character transitions
 but shows performance beyond mere bigram training due to the gru's hidden state. Regenerate locally with
@@ -46,5 +47,5 @@ which is just a basic set of non-optimized params and validation-less training.
 	ran her wastherr$$d$$d$$$$$$$$$<
 	ghe wastherryound$urrery$$$d$$$<
 	so waskering$doullyour$$$d$$$$$<
-
 ```
+And a noverry waskering day it was...
