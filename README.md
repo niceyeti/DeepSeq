@@ -65,8 +65,4 @@ And a noverry waskering day it was for each and all, without distinction...
     vertical-align:middle;
     max-height:100%;
 }
-#gru-loss em {
-	text-align: center;
-    vertical-align:middle;
-    max-height:100%;
-}
+
