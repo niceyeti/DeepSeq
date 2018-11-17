@@ -2,6 +2,8 @@ This repo contains a collection of sequential prediction model implementations i
 mostly sandbox stuff. The interfaces may be cleaned up in the future, but these projects are just a research/testing sandbox.
 Also see DoubleSecretProbation repo for Word2Vec and other nlp implementation tidbits.
 
+If you're in need of an implementation for research or other purposes, please contact me.
+
 Models and implementations
 1) Vanilla rnn in numpy
 2) Vanilla rnn in torch, manually constructed (not builtin torch.nn.RNN module)
