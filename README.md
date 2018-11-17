@@ -4,7 +4,7 @@ This repo contains a collection of sequential prediction model implementations i
 mostly sandbox stuff. The interfaces may be cleaned up in the future, but these projects are just a research/testing reference sandbox.
 Also see DoubleSecretProbation repo for Word2Vec and other nlp implementation tidbits.
 
-If you're in need of an implementation for research or other purposes, please contact me on linkedin or elsewhere.
+If you're in need of an implementation for research or other purposes, contact me on linkedin or elsewhere.
 
 Models and implementations
 1) Vanilla rnn in numpy
@@ -14,7 +14,7 @@ Models and implementations
 Folders:<br />
 * resources/ junk folder for images, etc.<br />
 * models/ saved parameters<br />
-* . code<br />
+* ./ code<br />
 * data/ training data<br />
 
 Training data is Treasure Island, by Robert Louis Stevenson.
