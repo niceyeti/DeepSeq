@@ -1,4 +1,4 @@
-#Deep Seq
+# Deep Seq
 
 This repo contains a collection of sequential prediction model implementations in a few different languages/libraries,
 mostly sandbox stuff. The interfaces may be cleaned up in the future, but these projects are just a research/testing sandbox.
@@ -19,7 +19,7 @@ Folders:<br />
 
 Training data is Treasure Island, by Robert Louis Stevenson.
 
-<div id="gru-loss">
+<div id="gru-loss" style="text-align:center">
     <img src="resources/pytorch_gru_error.png"/>
 	<em>One-hot character-prediction gru loss. Purty neat!</em>
 </div>
