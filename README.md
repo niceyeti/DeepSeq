@@ -20,7 +20,7 @@ Folders:<br />
 Training data is Treasure Island, by Robert Louis Stevenson.
 
 <div id="gru-loss">
-    <img src="resources/pytorch_gru_error.png"/>
+    <img src="resources/pytorch_gru_error.png" alt="blah"/>
 	<em style="vertical-align:middle">One-hot character-prediction gru loss. Purty neat!</em>
 </div>
 
@@ -59,6 +59,7 @@ And a noverry waskering day it was for each and all, without distinction...
     height:100px;
     line-height:100px;
 	text-align: center;
+	vertical-align:middle;
 }
 
 #gru-loss img {
