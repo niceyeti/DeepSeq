@@ -57,7 +57,7 @@ sequences begin/termination (see the Goodfellow Deep Learning book for better me
 
 @limit: Number of sequences to extract
 """
-def BuildSequenceDataset(fpath = "../mldata/treasureIsland.txt", limit=1000):
+def BuildSequenceDataset(fpath = "./data/treasureIsland.txt", limit=1000):
 	dataset = []
 
 	sequences = GetSentenceSequence(fpath)

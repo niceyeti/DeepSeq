@@ -16,7 +16,10 @@ Training data is Treasure Island, by Robert Louis Stevenson.
 
 ![gru error](resources/pytorch_gru_error.png)
 
-Gru character generation after modest training:
+Gru character generation after modest training below. This model was training purely on character-by-character transitions
+but shows performance beyond mere bigram training due to the gru's hidden state. Regenerate locally with
+	*python3 BPTT.py -batchSize=4 -maxEpochs=6000 -momentum=0.9 -eta=1E-3*
+which is just a basic set of non-optimized params and validation-less training.
 ```
 	Generating 10 sequences with stochastic=True
 	^ztf^^e^^lzyt^q^zvfff^qvcjzxqmz<
