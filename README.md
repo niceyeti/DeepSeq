@@ -51,7 +51,7 @@ which is just a basic set of non-optimized params and validation-less training.
 	ghe wastherryound$urrery$$$d$$$<
 	so waskering$doullyour$$$d$$$$$<
 ```
-And a noverry waskering day it was...
+And a noverry waskering day it was for each and all, without distinction...
 
 #gru-loss {
     height:100px;
