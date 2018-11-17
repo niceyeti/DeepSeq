@@ -1,10 +1,10 @@
 # Deep Seq
 
-This repo contains a collection of sequential prediction model implementations in a few different languages/libraries,
-mostly sandbox stuff. The interfaces may be cleaned up in the future, but these projects are just a research/testing sandbox.
+This repo contains a collection of sequential prediction model implementations in a few different libraries,
+mostly sandbox stuff. The interfaces may be cleaned up in the future, but these projects are just a research/testing reference sandbox.
 Also see DoubleSecretProbation repo for Word2Vec and other nlp implementation tidbits.
 
-If you're in need of an implementation for research or other purposes, please contact me.
+If you're in need of an implementation for research or other purposes, please contact me on linkedin or elsewhere.
 
 Models and implementations
 1) Vanilla rnn in numpy
@@ -21,13 +21,13 @@ Training data is Treasure Island, by Robert Louis Stevenson.
 
 <p align="center">
     <img src="resources/pytorch_gru_error.png"/>
-	<em align="center">One-hot character-prediction gru loss. Purty neat!</em>
+	<em>One-hot character-prediction gru loss. Purty neat!</em>
 </p>
 
 Gru character generation after modest training below. This model was training purely on character-by-character transitions
 but shows performance beyond mere bigram training due to the gru's hidden state. Regenerate locally with:<br/>
 ```
-    python3 BPTT.py -batchSize=4 -maxEpochs=6000 -momentum=0.9 -eta=1E-3
+python3 BPTT.py -batchSize=4 -maxEpochs=6000 -momentum=0.9 -eta=1E-3
 ```
 which is just a basic set of non-optimized params and validation-less training.
 ```
