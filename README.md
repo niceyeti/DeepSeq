@@ -19,7 +19,7 @@ Training data is Treasure Island, by Robert Louis Stevenson.
 
 <div id="gru-loss">
     <img src="resources/pytorch_gru_error.png"/>
-	<em>One-hot character-prediction gru loss. S'purty neat!</em>
+	<em>One-hot character-prediction gru loss. Purty neat!</em>
 </div>
 
 Gru character generation after modest training below. This model was training purely on character-by-character transitions
@@ -62,7 +62,7 @@ And a noverry waskering day it was for each and all, without distinction...
     vertical-align:middle;
     max-height:100%;
 }
-#gru-loss em {
+#gru-loss.em {
 	text-align: center;
     vertical-align:middle;
     max-height:100%;
