@@ -12,16 +12,16 @@ Models and implementations
 3) Torch gru implementation for one-hot encoded symbol sequences
 
 Folders:<br />
-  ./resources : junk folder for images, etc.<br />
-  ./models    : saved parameters<br />
-  ./          : code<br />
-  ./data      : training data<br />
+* resources/ junk folder for images, etc.<br />
+* models/ saved parameters<br />
+* . code<br />
+* data/ training data<br />
 
 Training data is Treasure Island, by Robert Louis Stevenson.
 
-<div id="gru-loss" style="text-align:center">
+<div id="gru-loss">
     <img src="resources/pytorch_gru_error.png"/>
-	<em>One-hot character-prediction gru loss. Purty neat!</em>
+	<em style="text-align:center">One-hot character-prediction gru loss. Purty neat!</em>
 </div>
 
 Gru character generation after modest training below. This model was training purely on character-by-character transitions
