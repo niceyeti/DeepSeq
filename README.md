@@ -9,10 +9,11 @@ Models and implementations
 2) Vanilla rnn in torch, manually constructed (not builtin torch.nn.RNN module)
 3) Torch gru implementation for one-hot encoded symbol sequences
 
-./resources: junk folder for images, etc.
-./models: saved parameters
-./ : duh code
-./data: training data
+Folders:<br />
+./resources: junk folder for images, etc.<br />
+./models: saved parameters<br />
+./ : code<br />
+./data: training data<br />
 
 Training data is Treasure Island, by Robert Louis Stevenson.
 
