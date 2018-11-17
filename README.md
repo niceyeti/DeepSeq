@@ -1,3 +1,5 @@
+#Deep Seq
+
 This repo contains a collection of sequential prediction model implementations in a few different languages/libraries,
 mostly sandbox stuff. The interfaces may be cleaned up in the future, but these projects are just a research/testing sandbox.
 Also see DoubleSecretProbation repo for Word2Vec and other nlp implementation tidbits.
