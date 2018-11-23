@@ -26,8 +26,10 @@ def usage():
 						-hiddenUnits,\
 						-bpStepLimit,\
 						-numSequences,\
-						-miniBatchSize")
-	print("Models: --torch-gru, --numpy-rnn, --custom-torch-rnn")
+						-miniBatchSize\
+						-maxSeqLen,\
+						-clip")
+	print("Models: --torch-gru=[rnn or gru], --numpy-rnn, --custom-torch-rnn")
 
 def main():
 	eta = 1E-5
@@ -36,7 +38,7 @@ def main():
 	miniBatchSize = 2
 	momentum = 1E-5
 	bpStepLimit = 4
-	maxSeqLen = 100
+	maxSeqLen = 200
 	numSequences = 100000
 	clip = -1.0 #Only applies to pytorch rnn/gru's, to mitigate exploding gradients, but I don't suggest using it. 
 	saveMinWeights = "--saveMinWeights" in sys.argv
@@ -57,6 +59,8 @@ def main():
 			numSequences = int(arg.split("=")[-1])
 		if "-clip=" in arg:
 			clip = float(arg.split("=")[-1])
+		if "-maxSeqLen" in arg:
+			maxSeqLen = int(arg.split("=")[-1])
 
 	NUMPY_RNN = "--numpy-rnn"
 	CUSTOM_TORCH_RNN = "--custom-torch-rnn"
@@ -102,16 +106,17 @@ def main():
 	if "--custom-torch-rnn" in sys.argv:
 		#convert the dataset to tensor form for pytorch
 		dataset = convertToTensorData(dataset)
-	
 		rnn = DiscreteSymbolRNN(xDim, hiddenUnits, yDim)
 		print("Training...")
 		rnn.train(dataset, epochs=maxEpochs, batchSize=20, torchEta=eta, bpttStepLimit=bpStepLimit)
 		rnn.generate(reverseEncoding)
 	
-	if "--torch-gru" in sys.argv:
+	if any("--torch-gru" in arg for arg in sys.argv):
+		#You can pass --torch-gru, --torch-gru=RNN, or --torch-GRU. Added this just since it was so easy to use an RNN instead of GRU. Default to GRU.
+		useRNN =  "--torch-gru=RNN" in sys.argv
 		batchedData = convertToTensorBatchData(dataset, batchSize=miniBatchSize)
 		#Try these params: python3 BPTT.py  -batchSize=4 -maxEpochs=6000 -momentum=0.9 -eta=1E-3
-		gru = DiscreteGRU(xDim, hiddenUnits, yDim, numHiddenLayers=1, batchFirst=True, clip=clip)
+		gru = DiscreteGRU(xDim, hiddenUnits, yDim, numHiddenLayers=1, batchFirst=True, clip=clip, useRNN=useRNN)
 		print("Training...")
 		gru.train(batchedData, epochs=maxEpochs, batchSize=miniBatchSize, torchEta=eta)
 		gru.generate(reverseEncoding,30,30,stochastic=True)

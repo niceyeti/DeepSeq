@@ -49,8 +49,9 @@ from torch_optimizer_builder import OptimizerFactory
 torch_default_dtype=torch.float32
 
 #A GRU cell with softmax output off the hidden state; one-hot input/output, for a character prediction demo
+#@useRNN: Using the built-in torch RNN is a simple swap, since it uses the same api as the GRU, so pass this to try an RNN
 class DiscreteGRU(torch.nn.Module):
-	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst, clip=-1):
+	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst, clip=-1, useRNN=False):
 		super(DiscreteGRU, self).__init__()
 		
 		self._optimizerBuilder = OptimizerFactory()
@@ -59,7 +60,10 @@ class DiscreteGRU(torch.nn.Module):
 		self.hdim = hdim
 		self.numHiddenLayers = numHiddenLayers
 		#build the network architecture
-		self.gru = torch.nn.RNN(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
+		if not useRNN:
+			self.gru = torch.nn.GRU(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
+		else:
+			self.gru = torch.nn.RNN(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
 		self.linear = torch.nn.Linear(hdim, ydim)
 		#LogSoftmax @dim refers to the dimension along which LogSoftmax (a function, not a layer) will apply softmax.
 		# dim=2, since the output of the network is size (batchSize x seqLen x ydim) and we want to calculate softmax at each output, hence dimension 2.
