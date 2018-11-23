@@ -15,7 +15,7 @@ import random
 import torch
 from numpy_rnn import NumpyRnn
 import matplotlib.pyplot as plt
-from torch_rnn import *
+from custom_torch_rnn import *
 from torch_gru import *
 from data_lib import *
 
@@ -88,9 +88,6 @@ def main():
 	xDim = dataset[0][0][0].shape[0]
 	yDim = dataset[0][0][1].shape[0]
 
-	#print("Shuffling dataset...")
-	#random.shuffle(dataset)
-
 	if "--numpy-rnn" in sys.argv:
 		print("TODO: Implement sigmoid and tanh scaling to prevent over-saturation; see Simon Haykin's backprop implementation notes")
 		print("TOOD: Implement training/test evaluation methods, beyond the cost function. Evaluate the probability of sequences in train/test data.")
@@ -106,17 +103,17 @@ def main():
 	if "--custom-torch-rnn" in sys.argv:
 		#convert the dataset to tensor form for pytorch
 		dataset = convertToTensorData(dataset)
-		rnn = DiscreteSymbolRNN(xDim, hiddenUnits, yDim)
+		rnn = CustomTorchRNN(xDim, hiddenUnits, yDim)
 		print("Training...")
 		rnn.train(dataset, epochs=maxEpochs, batchSize=20, torchEta=eta, bpttStepLimit=bpStepLimit)
 		rnn.generate(reverseEncoding)
 	
 	if any("--torch-gru" in arg for arg in sys.argv):
-		#You can pass --torch-gru, --torch-gru=RNN, or --torch-GRU. Added this just since it was so easy to use an RNN instead of GRU. Default to GRU.
-		useRNN =  "--torch-gru=RNN" in sys.argv
+		#You can pass --torch-gru, --torch-gru=RNN, or --torch-gru=GRU. Added this just since it was so easy to swap an RNN instead of GRU. Default to GRU.
+		useRNN =  "--torch-gru=RNN" in sys.argv or "--torch-gru=rnn" in sys.argv
 		batchedData = convertToTensorBatchData(dataset, batchSize=miniBatchSize)
 		#Try these params: python3 BPTT.py  -batchSize=4 -maxEpochs=6000 -momentum=0.9 -eta=1E-3
-		gru = DiscreteGRU(xDim, hiddenUnits, yDim, numHiddenLayers=1, batchFirst=True, clip=clip, useRNN=useRNN)
+		gru = DiscreteGRU(xDim, hiddenUnits, yDim, numHiddenLayers=2, batchFirst=True, clip=clip, useRNN=useRNN)
 		print("Training...")
 		gru.train(batchedData, epochs=maxEpochs, batchSize=miniBatchSize, torchEta=eta)
 		gru.generate(reverseEncoding,30,30,stochastic=True)

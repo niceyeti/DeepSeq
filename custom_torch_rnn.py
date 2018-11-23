@@ -17,7 +17,7 @@ import matplotlib.pyplot as plt
 
 torch_default_dtype=torch.float32
 
-class DiscreteSymbolRNN(torch.nn.Module):
+class CustomTorchRNN(torch.nn.Module):
 
 	def __init__(self, xdim, hdim, ydim):
 		super(DiscreteSymbolRNN, self).__init__()
