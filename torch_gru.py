@@ -39,7 +39,6 @@ Sample output:
 	so waskering$doullyour$$$d$$$$$<
 
 
-
 """
 
 import torch
@@ -51,7 +50,7 @@ torch_default_dtype=torch.float32
 
 #A GRU cell with softmax output off the hidden state; one-hot input/output, for a character prediction demo
 class DiscreteGRU(torch.nn.Module):
-	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst):
+	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst, clip=-1):
 		super(DiscreteGRU, self).__init__()
 		
 		self._optimizerBuilder = OptimizerFactory()
@@ -60,12 +59,16 @@ class DiscreteGRU(torch.nn.Module):
 		self.hdim = hdim
 		self.numHiddenLayers = numHiddenLayers
 		#build the network architecture
-		self.gru = torch.nn.GRU(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
+		self.gru = torch.nn.RNN(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
 		self.linear = torch.nn.Linear(hdim, ydim)
 		#LogSoftmax @dim refers to the dimension along which LogSoftmax (a function, not a layer) will apply softmax.
 		# dim=2, since the output of the network is size (batchSize x seqLen x ydim) and we want to calculate softmax at each output, hence dimension 2.
 		self.softmax = torch.nn.LogSoftmax(dim=2)
 		self._initWeights()
+		if clip > 0: #this is used as a flag to determine if clip_grad_norm_ will be called
+			self._clip = 1
+		else:
+			self._clip = -1
 
 	def _initWeights(self, initRange=1.0):
 		#print("all: {}".format(self.gru.all_weights))
@@ -183,7 +186,7 @@ class DiscreteGRU(torch.nn.Module):
 
 			print(s+"<")
 
-	def train(self, batchedData, epochs, batchSize=5, torchEta=1E-2, momentum=0.9, optimizer="sgd"):
+	def train(self, batchedData, epochs, batchSize=5, torchEta=1E-3, momentum=0.9, optimizer="sgd"):
 		"""
 		This is just a working example of a torch BPTT network; it is far from correct yet.
 		The hyperparameters and training regime are not optimized or even verified, other than
@@ -217,6 +220,7 @@ class DiscreteGRU(torch.nn.Module):
 		ct = 0
 		k = 20
 		losses = []
+		nanDetected = False
 
 		for epoch in range(epochs):
 			x_batch, y_batch = batchedData[random.randint(0,len(batchedData)-1)]
@@ -229,13 +233,20 @@ class DiscreteGRU(torch.nn.Module):
 			# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
 			# of the target value at each time step t.
 			loss = criterion(y_pred, batchTargets)
+			nanDetected = nanDetected or torch.isnan(loss)
 			losses.append(loss.item())
 			if epoch % 50 == 49: #print loss eveyr 50 epochs
 				avgLoss = sum(losses[epoch-k:])/float(k)
 				print(epoch, avgLoss)
+				if nanDetected:
+					print("Nan loss detected; suggest mitigating with shorter training regimes (shorter sequences) or gradient clipping")
+			#print(loss)
 			# Zero gradients, perform a backward pass, and update the weights.
 			optimizer.zero_grad()
 			loss.backward()
+			#note this is the wrong way to clip gradients, which should be done during backprop, not after backprop has accumulated all gradients, but torch doesn't support this easily
+			if self._clip > 0.0:
+			 	torch.nn.utils.clip_grad_norm_(self.parameters(), self._clip)
 			optimizer.step()
 
 		#plot the losses

@@ -1,11 +1,14 @@
 """
+NOTE: This is a manually defined rnn version for learning torch layers, and shouldn't be used. Use the torch
+built-in RNN cell instead. However, note that the builtin torch RNN (not RNNCell, but nn.RNN) does not 
+have a nice gradient-clipping method, and suffers gradient explosion as a result. So a scratch RNN
+version isn't such a bad idea, but RNNCell should be preferred. Even clip_grad_norm_() did not
+yield convergence with the builtin RNN.
+
 A simple vanilla rnn demonstration for discrete sequential prediction using pytorch.
 
 RNN model: Given an input symbol and the current hidden state, predict the next character. So we have
 discrete one-hot input, and discrete one-hot output.
-
-NOTE: This is a manually defined rnn version for learning torch layers, and shouldn't be used. Use the torch
-built-in RNN cell instead.
 """
 
 import torch
@@ -110,7 +113,7 @@ class DiscreteSymbolRNN(torch.nn.Module):
 		for epoch in range(epochs):
 			if epoch > 0:
 				k = 20
-				print("Epoch {}, avg loss of last k: {}".format(epoch, sum(losses[-k:])/float(len(losses[-k:]))))
+				print("Batch {} of {}, avg loss of last k: {}".format(epoch, epochs, sum(losses[-k:])/float(len(losses[-k:]))))
 				if epoch == 300:
 					torchEta = 1E-4
 				if epoch == 450:
