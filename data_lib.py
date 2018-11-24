@@ -65,6 +65,8 @@ sequences begin/termination (see the Goodfellow Deep Learning book for better me
 @limit: Number of sequences to return
 @maxSeqLen: maximum length of any training sequence. This is important for simple RNN's, to prevent gradient explosion
 by training over shorter sequences, e.g. @maxSeqLen=10 or so.
+
+Returns: Data as a list of sequences, each sequence a list of numpy one-hot encoded vectors indicating characters
 """
 def BuildCharSequenceDataset(fpath = "./data/treasureIsland.txt", limit=1000, maxSeqLen=1000000):
 	dataset = []

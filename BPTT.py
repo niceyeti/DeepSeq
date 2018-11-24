@@ -8,6 +8,68 @@ The first crack at this is using discrete inputs and outputs for letter-predicti
 Inputs are 0/1 reals, and outputs are reals in [0,1] which attempt to learn one-hot 0/1 targets.
 
 
+auouuod^u^a^^f^fawff^fffffaaaaa<
+riewvf^haod^^zfvaxaaaaaaaaaaaaa<
+ffas^^^^j^^^f^da^da^^^^^^^ffaaa<
+elix^^^^^f^^^^ffffaaaaaaaaaaaaa<
+kvfjgfffuooaaaaaaaaaaaaaaaaaaaa<
+cbvjjhfauuaiaaaasaaaaa^zit^d^og<
+xs^b^jjpff^aaaaaaaaaaaaaaa^aaaa<
+sad^^^^^^^^^^^^^j^idauw^^^jazva<
+rhj^^^^da^^fasffffffffffaaaaaaa<
+auouuuuuuuuuuuuuuuu^as^s^f^aaaa<
+bvmjvbvaaaaaaaaaaataoooemmaaaaa<
+pffuuu^^^f^a^iaaaa^iaaa^ioaua^^<
+cbsfffad^fasua^uauaaeaaeauasaox<
+cvffxffsffss^fbaaaaaaaaaaaaaaaa<
+ dvsjjzzzaoleeuclaaaaaaaaaaaaaa<
+auouuuuuuuuuuuuuuuu^^f^^^f^^^^^<
+cbvjfhaamaasaow^azvpaaaaaaaaaaa<
+^^bvuuuuuu^^ffmfffmsffffzfavfaa<
+wiqvfvamaea^aa^ioa^aoaaaaaaalla<
+uwiuuioiosfffffaaaaaaaaaaaaaa^a<
+uwff^^fasaffdvfffffaaaaaaaaaaal<
+wmmmdjvpamuhuadamaaaaalaaaaaaaa<
+qvfffbmbbbbbbjpme^^j^zjjjaoudan<
+lvvfffou^^^bbbaaaaaaaallaaolaao<
+r^wffjvfao^aaeaaoaaeaolaaalaala<
+bmioooeeooegpppppaaaaaaaaaaaaaa<
+ffaaa^ia^^^^^^^^^^^^^^^^^^^a^^a<
+oooetxmjpbjjjnnosismaaaaaaaaaaa<
+hbvffmmffmffffjjffaaaaaaaaaaaaa<
+nk^^jjjumud^^ffumfffaaaaaaaaaaa<
+Generating 30 sequences with stochastic=False
+handtwers huuskulc$$$$$$$$$$$$$<
+gut on wash$$$$$$$$$$$$$$$$$$$$<
+ cortidh manbers gu$$$$$$$$$$$$<
+kuie tivenslo$$$$$$$$$$$$$$$$$$<
+lounter sipng$$$$$$$$$$$$$$$$$$<
+lounter sipng$$$$$$$$$$$$$$$$$$<
+ cortidh manbers gu$$$$$$$$$$$$<
+kuie tivenslo$$$$$$$$$$$$$$$$$$<
+dlang ther wispl$$$$$$$$$$$$$$$<
+s$$t$ capice$inc$$$$$$$$$$$$$$$<
+zem w$$$$$$v$$$$$$$$$$$$$$$$$re<
+yeeq is nar mris$$$$$$$$$$$$$$$<
+kuie tivenslo$$$$$$$$$$$$$$$$$$<
+zem w$$$$$$v$$$$$$$$$$$$$$$$$re<
+jut ound thery bla$$$$$$$$$$$$$<
+kuie tivenslo$$$$$$$$$$$$$$$$$$<
+no guarechw wily$$$$$$$$$$$$$$$<
+gut on wash$$$$$$$$$$$$$$$$$$$$<
+atske wulv$elen$$$$$$$$$$$$$$$$<
+ cortidh manbers gu$$$$$$$$$$$$<
+atske wulv$elen$$$$$$$$$$$$$$$$<
+yeeq is nar mris$$$$$$$$$$$$$$$<
+jut ound thery bla$$$$$$$$$$$$$<
+ cortidh manbers gu$$$$$$$$$$$$<
+lounter sipng$$$$$$$$$$$$$$$$$$<
+gut on wash$$$$$$$$$$$$$$$$$$$$<
+no guarechw wily$$$$$$$$$$$$$$$<
+ithlldul drecl$$$$$$$$$$$$$$$$$<
+dlang ther wispl$$$$$$$$$$$$$$$<
+no guarechw wily$$$$$$$$$$$$$$$<
+
 """
 
 import sys
@@ -30,10 +92,12 @@ def usage():
 						-maxSeqLen,\
 						-clip")
 	print("Models: --torch-gru=[rnn or gru], --numpy-rnn, --custom-torch-rnn")
+	print("Suggested example params: python3 BPTT.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-3 --torch-gru -batchSize=10 -numHiddenLayers=2")
 
 def main():
 	eta = 1E-5
 	hiddenUnits = 50
+	numHiddenLayers = 1
 	maxEpochs = 500
 	miniBatchSize = 2
 	momentum = 1E-5
@@ -57,6 +121,8 @@ def main():
 			miniBatchSize = int(arg.split("=")[-1])
 		if "-numSequences" in arg:
 			numSequences = int(arg.split("=")[-1])
+		if "-numHiddenLayers=" in arg:
+			numHiddenLayers = int(arg.split("=")[-1])
 		if "-clip=" in arg:
 			clip = float(arg.split("=")[-1])
 		if "-maxSeqLen" in arg:
@@ -73,6 +139,8 @@ def main():
 
 	dataset, encodingMap = BuildCharSequenceDataset(limit=numSequences, maxSeqLen=20)
 	reverseEncoding = dict([(encodingMap[key],key) for key in encodingMap.keys()])
+	print("Randomizing dataset...")
+	random.shuffle(dataset)
 
 	print("First few target outputs:")
 	for sequence in dataset[0:20]:
@@ -112,8 +180,8 @@ def main():
 		#You can pass --torch-gru, --torch-gru=RNN, or --torch-gru=GRU. Added this just since it was so easy to swap an RNN instead of GRU. Default to GRU.
 		useRNN =  "--torch-gru=RNN" in sys.argv or "--torch-gru=rnn" in sys.argv
 		batchedData = convertToTensorBatchData(dataset, batchSize=miniBatchSize)
-		#Try these params: python3 BPTT.py  -batchSize=4 -maxEpochs=6000 -momentum=0.9 -eta=1E-3
-		gru = DiscreteGRU(xDim, hiddenUnits, yDim, numHiddenLayers=2, batchFirst=True, clip=clip, useRNN=useRNN)
+		#Try these params: python3 BPTT.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-3 --torch-gru -batchSize=10 -numHiddenLayers=2
+		gru = DiscreteGRU(xDim, hiddenUnits, yDim, numHiddenLayers=numHiddenLayers, batchFirst=True, clip=clip, useRNN=useRNN)
 		print("Training...")
 		gru.train(batchedData, epochs=maxEpochs, batchSize=miniBatchSize, torchEta=eta)
 		gru.generate(reverseEncoding,30,30,stochastic=True)
@@ -121,7 +189,4 @@ def main():
 
 if __name__ == "__main__":
 	main()
-
-
-
 

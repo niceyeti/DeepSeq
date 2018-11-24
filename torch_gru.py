@@ -96,7 +96,7 @@ class DiscreteGRU(torch.nn.Module):
 		if verbose:
 			print("x: {} hidden: {} z_t: {} s: {} output: {}".format(x_t, hidden, z_t, s_t, output))
 
-		return output, z_t
+		return output, z_t, hidden
 
 	"""
 	The axes semantics are (num_layers, minibatch_size, hidden_dim).
@@ -172,14 +172,16 @@ class DiscreteGRU(torch.nn.Module):
 
 		for _ in range(numSeqs):
 			#reset network
-			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=True)
+			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=False)
 			x_t = torch.zeros(1, 1, self.xdim, requires_grad=True)
+			#print("hidden size {} x_0 size {}".format(hidden.size(), x_t.size())) 
 			maxIndex = random.randint(0,self.xdim-1)
 			x_t[0][0][ maxIndex ] = 1.0
 			s = reverseEncoding[maxIndex]
 			for _ in range(seqLen):
 				#@x_in output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
-				x_t, hidden = self(x_t, hidden, verbose=False)
+				x_t, z_t, hidden = self(x_t, hidden, verbose=False)
+				#print("hidden size {} x_t size {}".format(hidden.size(), x_t.size())) 
 				maxIndex = self.sampleMaxIndex(x_t[0][0], stochastic)
 
 				if not allowRecurrentNoise:
@@ -226,32 +228,37 @@ class DiscreteGRU(torch.nn.Module):
 		losses = []
 		nanDetected = False
 
-		for epoch in range(epochs):
-			x_batch, y_batch = batchedData[random.randint(0,len(batchedData)-1)]
-			batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
-			hidden = self.initHidden(batchSize, self.numHiddenLayers)
-			# Forward pass: Compute predicted y by passing x to the model
-			y_pred, hidden = self(x_batch, hidden, verbose=False)
-			# y_batch is size (@batchSize x seqLen x ydim). This gets the target indices (argmax of the output) at every timestep t.
-			batchTargets = y_batch.argmax(dim=1)
-			# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
-			# of the target value at each time step t.
-			loss = criterion(y_pred, batchTargets)
-			nanDetected = nanDetected or torch.isnan(loss)
-			losses.append(loss.item())
-			if epoch % 50 == 49: #print loss eveyr 50 epochs
-				avgLoss = sum(losses[epoch-k:])/float(k)
-				print(epoch, avgLoss)
-				if nanDetected:
-					print("Nan loss detected; suggest mitigating with shorter training regimes (shorter sequences) or gradient clipping")
-			#print(loss)
-			# Zero gradients, perform a backward pass, and update the weights.
-			optimizer.zero_grad()
-			loss.backward()
-			#note this is the wrong way to clip gradients, which should be done during backprop, not after backprop has accumulated all gradients, but torch doesn't support this easily
-			if self._clip > 0.0:
-			 	torch.nn.utils.clip_grad_norm_(self.parameters(), self._clip)
-			optimizer.step()
+		#try just allows user to press ctrl+c to interrupt training and observe his or her network at any point
+		try:
+			for epoch in range(epochs):
+				x_batch, y_batch = batchedData[random.randint(0,len(batchedData)-1)]
+				batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
+				hidden = self.initHidden(batchSize, self.numHiddenLayers)
+				# Forward pass: Compute predicted y by passing x to the model
+				y_pred, z_pred, hidden = self(x_batch, hidden, verbose=False)
+				# y_batch is size (@batchSize x seqLen x ydim). This gets the target indices (argmax of the output) at every timestep t.
+				batchTargets = y_batch.argmax(dim=1)
+				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
+				# of the target value at each time step t.
+				loss = criterion(y_pred, batchTargets)
+				nanDetected = nanDetected or torch.isnan(loss)
+				losses.append(loss.item())
+				if epoch % 50 == 49: #print loss eveyr 50 epochs
+					avgLoss = sum(losses[epoch-k:])/float(k)
+					print(epoch, avgLoss)
+					if nanDetected:
+						print("Nan loss detected; suggest mitigating with shorter training regimes (shorter sequences) or gradient clipping")
+				#print(loss)
+				# Zero gradients, perform a backward pass, and update the weights.
+				optimizer.zero_grad()
+				loss.backward()
+				#note this is the wrong way to clip gradients, which should be done during backprop, not after backprop has accumulated all gradients, but torch doesn't support this easily
+				if self._clip > 0.0:
+				 	torch.nn.utils.clip_grad_norm_(self.parameters(), self._clip)
+				optimizer.step()
+	
+		except (KeyboardInterrupt):
+			pass
 
 		#plot the losses
 		k = 20
