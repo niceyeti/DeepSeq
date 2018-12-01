@@ -8,6 +8,10 @@ The first crack at this is using discrete inputs and outputs for letter-predicti
 Inputs are 0/1 reals, and outputs are reals in [0,1] which attempt to learn one-hot 0/1 targets.
 
 
+
+
+
+
 auouuod^u^a^^f^fawff^fffffaaaaa<
 riewvf^haod^^zfvaxaaaaaaaaaaaaa<
 ffas^^^^j^^^f^da^da^^^^^^^ffaaa<
@@ -70,6 +74,103 @@ ithlldul drecl$$$$$$$$$$$$$$$$$<
 dlang ther wispl$$$$$$$$$$$$$$$<
 no guarechw wily$$$$$$$$$$$$$$$<
 
+
+Output with a 3-layer hidden layer, and the following parameters:
+	python3 BPTT.py  -maxEpochs=5000 -momentum=0.9 -eta=1E-3 --torch-gru -batchSize=5 -numHiddenLayers=3
+
+pqbjje^aoouz^fjaaaaaaaaaaaaaaaa<
+ hfzfff^jdsetjmdazjaasjaaaaaaaa<
+bwjodjoub^jnujhfvbffssaaaaaaaaa<
+vonu^bzdzi^itfiebfptitaaaoohaaa<
+mjiue^^^bjtpfpzebuhbgeauaaaaaaa<
+utlb^fj^f^f^^f^ze^e^fhwbfihj^fj<
+hlmoooo^ffffvjqbvfovfffatfanfaa<
+k onvfbwtnf^^bh^u^z^ihfbffaffaa<
+sjyjfffffffffffffjfffffffffffvf<
+wrffjqbm^jfpejxoazauwiggiaafaaa<
+gssjb^^^^^anepewaaaaeaaaaaaaaaa<
+atijmpppoabppblffsasfiuuaaaaaaa<
+bh^r^fvtb^b^^^lu^^u^^be^bfa^aol<
+z bpszde^uqjpjbjbfvjahoveaapaaa<
+rwmbbtbbhabjuu^uj^f^jjfaaaaaaaa<
+khf^m^^fov^bzff^ff^izcfs^^iewis<
+zfbbbhbv^vfbejlovl^uaaaaaaaaaaa<
+ne^^boe^ze^bbxfxaefazeeeueecaaa<
+zxbcpfmn^j^feqqfiwlanaahaaaaaaa<
+cnpmc^cf^lehte^^e^c^fc^fzeheasu<
+sqcjfffbt^fb^^ff^^zj^^ff^^^f^f^<
+bwyfbj^jo^vbu^uf^j^fffpu^vf^ff^<
+oloughfuuuf^ouuvf^vfhbebusaadda<
+ ncjffwitijametitaaaaaaaaaaaaaa<
+bhfoh^^bhf^z^ff^pxy^ffp^hxz^bfz<
+yjmhb^^f^b^p^ie^jb^fjhbphfbffiw<
+cffji^fffffjb^fffxj^bfm^fffj^ff<
+urmmbmetbfbuexjjifboaaaaaaaaaaa<
+uroojjodufqzuouuaaiaaaaaaaaaaaa<
+yz^p^bj^^if^bsoew^atjpoxsaaaaaa<
+Generating 30 sequences with stochastic=False
+^zat aeddeddeshou$$$$$$$$$$$$$$<
+atnoi shiredede s$$$$$$$$$$$$$$<
+gruilnn iiiiniinniri$$$$$$$$$$$<
+du liin wiiingg$$$$$$$$$$$$$$$$<
+ceelinne wassdem$$$$$$$$$$$$$$$<
+atnoi shiredede s$$$$$$$$$$$$$$<
+oktti tiin this$$$$$$$$$$$$$$$$<
+id gaanndaddd$$$$$$$$$$$$$$$$$$<
+oktti tiin this$$$$$$$$$$$$$$$$<
+^zat aeddeddeshou$$$$$$$$$$$$$$<
+ qilneded t$$$$$$$$$$$$$$$$$$$$<
+atnoi shiredede s$$$$$$$$$$$$$$<
+^zat aeddeddeshou$$$$$$$$$$$$$$<
+tvort ii isdand$$$$$$$$$$$$$$$$<
+id gaanndaddd$$$$$$$$$$$$$$$$$$<
+huou thirasherhed$$$$$$$$$$$$$$<
+nr iindan then$$$$$$$$$$$$$$$$$<
+wxaqn thennndnnd$$$$$$$$$$$$$$$<
+huou thirasherhed$$$$$$$$$$$$$$<
+oktti tiin this$$$$$$$$$$$$$$$$<
+mwha aatiininto$$$$$$$$$$$$$$$$<
+yne ian wasaded$$$$$$$$$$$$$$$$<
+szden sinnnd hur th$$$$$$$$$$$$<
+^zat aeddeddeshou$$$$$$$$$$$$$$<
+kthe s iyyen hadde$$$$$$$$$$$$$<
+ugni atainggha$$$$$$$$$$$$$$$$$<
+xk atannntddeedendendn$$$$$$$$$<
+rildatindin thid$$$$$$$$$$$$$$$<
+elilthen hou$$$$$$$$$$$$$$$$$$$<
+ugni atainggha$$$$$$$$$$$$$$$$$<
+
+Generating 30 sequences with stochastic=False
+rerh ifsintishid$$$$$$$$$$$$$$$<
+z orretingvksug$$$$$$$$$$$$$$$$<
+ster ihed$dad$$$$$$$$$$$$$$$$$$<
+lanset$$ wir$$$$$$$$$$$$$$$$$$$<
+azrrredy forsin$$$$$$$$$$$$$$$$<
+ster ihed$dad$$$$$$$$$$$$$$$$$$<
+^^uther whosiny won$$$$$$$$$$$$<
+ukdrinsished$$d$$$$$$$$$$$$$$$$<
+wzeryontkty$$d$$$$$$$$$$$$$$$$$<
+nayathontsai$$$$$$$$$$$$$$$$$$$<
+xartyessingluss$$$$$$$$$$$$$$$$<
+bzurrn sourked$$$$$$$$$$$$$$$$$<
+nayathontsai$$$$$$$$$$$$$$$$$$$<
+kalsoudery$$$$$$$$$$$$$$$$$$$$$<
+fs k$on$ nad$$$$$$$$$$$$$$$$$$$<
+rerh ifsintishid$$$$$$$$$$$$$$$<
+xartyessingluss$$$$$$$$$$$$$$$$<
+ster ihed$dad$$$$$$$$$$$$$$$$$$<
+hazstontud$$d$$$$$$$$$$$$$$$$$$<
+card sout$da$$$$$$$$$$$$$$$$$$$<
+vquucobdsteron$$$$$$$$$$$$$$$$$<
+ukdrinsished$$d$$$$$$$$$$$$$$$$<
+y$kesnancled$$$$$$$$$$$$$$$$$$$<
+card sout$da$$$$$$$$$$$$$$$$$$$<
+d congk$ting$$$$$$$$$$$$$$$$$$$<
+ comeded$ her$$$$$$$$$$$$$$$$$$<
+$wssweny thirsdr$$$$$$$$$$$$$$$<
+tw tradetherdid$$$$$$$$$$$$$$$$<
+g$t faavryyend$$$$$$$$$$$$$$$$$<
+xartyessingluss$$$$$$$$$$$$$$$$<
 """
 
 import sys

@@ -6,6 +6,8 @@ import string
 import re
 import numpy as np
 import torch
+import gensim
+import os
 
 #Best to stick with float; torch is more float32 friendly according to highly reliable online comments
 numpy_default_dtype=np.float32
@@ -50,6 +52,59 @@ def TruncateSequences(sequences, maxLen):
 	return [seq[0:maxLen] for seq in sequences]
 
 """
+Builds a sequential training dataset of word embeddings. Note that this could just implement a generator, rather
+than building a giant dataset in memory: the model contains all the vectors for the training sequences, so just
+iterate the training sequences, generating their corresponding vectors. 
+
+NOTE: If any term in @trainingText is not in the word2vec model, that training sequence is truncated at that word
+
+@trainTextPath: A file containing word sequences, one training sequence per line. The terms in this file must exactly match those
+used to train the word-embedding model. This is very important, since it means that both the model and the training sequences
+must have been derived from the same text normalization methods and so on.
+@wordModelPath: Path to a word2vec model for translating terms into fixed-length input vectors.
+
+Returns: Data as a list of sequences, each sequence a list of numpy one-hot encoded vectors indicating characters
+"""
+def BuildWordSequenceDataset(trainTextPath, wordModelPath, limit=1000, maxSeqLen=1000000, minSeqLength=5):
+	if not os.path.exists(trainTextPath):
+		print("ERROR training text path not found: "+trainTextPath)
+		exit()
+	if not os.path.exists(wordModelPath):
+		print("ERROR word model path not found: "+wordModelPath)
+		exit()
+
+	model = gensim.models.Word2Vec.load(wordModelPath)
+	dataset = []
+	with open(trainTextPath, "r") as trainFile:
+		dataset = GetEmbeddedDataset(trainFile, model, minLength=minSeqLength)
+
+	return dataset, model
+
+"""
+
+"""
+def GetEmbeddedDataset(wordFile, word2vecModel, minLength=-1):
+	zero_vector = np.zeros(word2vecModel.layer1_size) #vectors are stored by word2vec as (k,) size numpy arrays
+	truncations = 0
+	dataset = []
+
+	for line in wordFile:
+		seq = [zero_vector]
+		for word in line.split():
+			if word in word2vecModel:
+				seq.append(word2vecModel[word])
+			else:
+				truncations += 1
+				#break
+		trainingSeq = list(zip(seq[1:], seq[:-1]))
+		if len(trainingSeq) > minLength: #handles the possibility of truncation
+			dataset.append(trainingSeq)
+
+	print("Embedded dataset created with {} truncations, {} training sequences".format(truncations, len(dataset)))
+
+	return dataset
+
+"""
 Returns a list of lists of (x,y) numpy vector pairs describing bigram character data: x=s[i], y=s[i-1] for some sequence s.
 
 The data consists of character sequences derived from the novel Treasure Island.
@@ -68,7 +123,7 @@ by training over shorter sequences, e.g. @maxSeqLen=10 or so.
 
 Returns: Data as a list of sequences, each sequence a list of numpy one-hot encoded vectors indicating characters
 """
-def BuildCharSequenceDataset(fpath = "./data/treasureIsland.txt", limit=1000, maxSeqLen=1000000):
+def BuildCharSequenceDataset(fpath = "../data/treasureIsland.txt", limit=1000, maxSeqLen=1000000):
 	dataset = []
 
 	sequences = GetSentenceSequence(fpath)
