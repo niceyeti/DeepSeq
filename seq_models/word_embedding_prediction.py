@@ -85,18 +85,18 @@ def main():
 		usage()
 
 	print("Building vector dataset...")
-	dataset, vecModel = BuildWordSequenceDataset(trainPath, modelPath, limit=numSequences, maxSeqLen=20)
+	dataset, vecModel = GetEmbeddedOneHotDatasetGenerator(trainPath, modelPath, limit=numSequences, maxSeqLen=20)
 	print(str([len(seq) for seq in dataset]))
-	print("Randomizing dataset...")
-	random.shuffle(dataset)
+	#print("Randomizing dataset...")
+	#random.shuffle(dataset)
 	print("Converting to tensor batch data...")
 	dataset = convertToTensorBatchData(dataset, batchSize=1)
-	print(dataset[100])
+	#print(dataset[100])
 
 
 	print(str(encodingMap))
 	#print(str(dataset[0]))
-	print("SHAPE: num examples={} xdim={} ydim={}".format(len(dataset), dataset[0][0][0].shape, dataset[0][0][1].shape))
+	#print("SHAPE: num examples={} xdim={} ydim={}".format(len(dataset), dataset[0][0][0].shape, dataset[0][0][1].shape))
 	xDim = model.layer1_size
 	yDim = len(model.wv.vocab)
 

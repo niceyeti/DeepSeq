@@ -105,6 +105,51 @@ def GetEmbeddedDataset(wordFile, word2vecModel, minLength=-1):
 	return dataset
 
 """
+For the purposes of efficiency, it becomes difficult (and unnecessary) to load an entire dataset into memory for training,
+and why do so anyway? This version implements dataset as a generator. The caller must then call next() to iterate items
+one at a time, and note that the iterator is just linear, without data randomization.
+"""
+def GetEmbeddedOneHotDatasetGenerator(trainTextPath, wordModelPath, limit=1000, maxSeqLen=1000000, minSeqLength=5):
+	if not os.path.exists(trainTextPath):
+		print("ERROR training text path not found: "+trainTextPath)
+		exit()
+	if not os.path.exists(wordModelPath):
+		print("ERROR word model path not found: "+wordModelPath)
+		exit()
+
+	model = gensim.models.Word2Vec.load(wordModelPath)
+	dataset = None
+	trainFile = open(trainTextPath, "r")
+	datagen = GetEmbeddedOneHotDatagen(trainFile, model, minLength=minSeqLength)
+
+	return datagen, model
+
+"""
+
+"""
+def GetEmbeddedOneHotDatagen(wordFile, word2vecModel, minLength=-1):
+	zero_vector_in = np.zeros(word2vecModel.layer1_size) #vectors are stored by word2vec as (k,) size numpy arrays
+	zero_vector_out = np.zeros(len(word2vecModel.wv.vocab))
+	truncations = 0
+	dataset = []
+
+	for line in wordFile:
+		seq = []
+		output = [] #output is one-hot encoded; this is incredibly wasteful, since vocab can be huge
+		for word in line.split():
+			if word in word2vecModel:
+				seq.append(word2vecModel[word])
+				out_vec = np.zeros(len(word2vecModel.wv.vocab))
+				out_vec[word2vecModel.wv.vocab[word].index] = 1.0
+				output.append(out_vec)
+			else:
+				truncations += 1
+				#break
+		trainingSeq = list(zip(seq+[zero_vector_in], [zero_vector_out]+output))
+		if len(trainingSeq) > minLength: #handles the possibility of truncation
+			yield trainingSeq
+
+"""
 Returns a list of lists of (x,y) numpy vector pairs describing bigram character data: x=s[i], y=s[i-1] for some sequence s.
 
 The data consists of character sequences derived from the novel Treasure Island.
