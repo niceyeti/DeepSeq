@@ -12,6 +12,9 @@ import os
 #Best to stick with float; torch is more float32 friendly according to highly reliable online comments
 numpy_default_dtype=np.float32
 
+ignore_index = -1
+
+
 """
 Compresses all whitepace characters in some string down to a single-space.
 """
@@ -57,59 +60,19 @@ than building a giant dataset in memory: the model contains all the vectors for 
 iterate the training sequences, generating their corresponding vectors. 
 
 NOTE: If any term in @trainingText is not in the word2vec model, that training sequence is truncated at that word
+TODO: Instead of truncation, set unknown term to IGNORE_INDEX
 
 @trainTextPath: A file containing word sequences, one training sequence per line. The terms in this file must exactly match those
 used to train the word-embedding model. This is very important, since it means that both the model and the training sequences
 must have been derived from the same text normalization methods and so on.
 @wordModelPath: Path to a word2vec model for translating terms into fixed-length input vectors.
+@ignore_index: A flag value for output that should be ignored. See pytorch docs.
 
 Returns: Data as a list of sequences, each sequence a list of numpy one-hot encoded vectors indicating characters
+
+TODO: This could be implemented as a generator of batches, instead of a monolothic dataset, for efficiency.
 """
-def BuildWordSequenceDataset(trainTextPath, wordModelPath, limit=1000, maxSeqLen=1000000, minSeqLength=5):
-	if not os.path.exists(trainTextPath):
-		print("ERROR training text path not found: "+trainTextPath)
-		exit()
-	if not os.path.exists(wordModelPath):
-		print("ERROR word model path not found: "+wordModelPath)
-		exit()
-
-	model = gensim.models.Word2Vec.load(wordModelPath)
-	dataset = []
-	with open(trainTextPath, "r") as trainFile:
-		dataset = GetEmbeddedDataset(trainFile, model, minLength=minSeqLength)
-
-	return dataset, model
-
-"""
-
-"""
-def GetEmbeddedDataset(wordFile, word2vecModel, minLength=-1):
-	zero_vector = np.zeros(word2vecModel.layer1_size) #vectors are stored by word2vec as (k,) size numpy arrays
-	truncations = 0
-	dataset = []
-
-	for line in wordFile:
-		seq = [zero_vector]
-		for word in line.split():
-			if word in word2vecModel:
-				seq.append(word2vecModel[word])
-			else:
-				truncations += 1
-				#break
-		trainingSeq = list(zip(seq[1:], seq[:-1]))
-		if len(trainingSeq) > minLength: #handles the possibility of truncation
-			dataset.append(trainingSeq)
-
-	print("Embedded dataset created with {} truncations, {} training sequences".format(truncations, len(dataset)))
-
-	return dataset
-
-"""
-For the purposes of efficiency, it becomes difficult (and unnecessary) to load an entire dataset into memory for training,
-and why do so anyway? This version implements dataset as a generator. The caller must then call next() to iterate items
-one at a time, and note that the iterator is just linear, without data randomization.
-"""
-def GetEmbeddedOneHotDatasetGenerator(trainTextPath, wordModelPath, limit=1000, maxSeqLen=1000000, minSeqLength=5):
+def GetEmbeddedDataset(trainTextPath, wordModelPath, batchSize=1, limit=1000, maxSeqLen=1000000, minSeqLength=5, ignoreIndex=-1):
 	if not os.path.exists(trainTextPath):
 		print("ERROR training text path not found: "+trainTextPath)
 		exit()
@@ -120,34 +83,44 @@ def GetEmbeddedOneHotDatasetGenerator(trainTextPath, wordModelPath, limit=1000, 
 	model = gensim.models.Word2Vec.load(wordModelPath)
 	dataset = None
 	trainFile = open(trainTextPath, "r")
-	datagen = GetEmbeddedOneHotDatagen(trainFile, model, minLength=minSeqLength)
+	dataset = GetEmbeddedTrainingSequences(trainFile, model, batchSize, minLength=minSeqLength, ignore_index=ignoreIndex)
 
-	return datagen, model
-
-"""
+	return dataset, model
 
 """
-def GetEmbeddedOneHotDatagen(wordFile, word2vecModel, minLength=-1):
+Generates training sequences where each timestep prediction is from a k-dimensional embedding vector
+to the target index (int) of the next term, per its one-hot index in word2vec model. Only the target index
+of the target term is stored, not its one-hot encoded representation.
+
+Each training sequence is a sequence of tuples of this type, k \in R --> i \in Z+
+
+@ignore_index: A flag value for output that should be ignored. See pytorch docs.
+"""
+def GetEmbeddedTrainingSequences(wordFile, word2vecModel, batchSize=1, minLength=-1, ignore_index=-1):
 	zero_vector_in = np.zeros(word2vecModel.layer1_size) #vectors are stored by word2vec as (k,) size numpy arrays
-	zero_vector_out = np.zeros(len(word2vecModel.wv.vocab))
+	pad_out = -1
 	truncations = 0
 	dataset = []
 
 	for line in wordFile:
 		seq = []
-		output = [] #output is one-hot encoded; this is incredibly wasteful, since vocab can be huge
+		output = [] #target outputs are stored via their corresponding model indices, not one-hot encoded
 		for word in line.split():
 			if word in word2vecModel:
-				seq.append(word2vecModel[word])
-				out_vec = np.zeros(len(word2vecModel.wv.vocab))
-				out_vec[word2vecModel.wv.vocab[word].index] = 1.0
-				output.append(out_vec)
+				tensor = torch.tensor(word2vecModel[word])
+				seq.append(tensor)
+				targetIndex = word2vecModel.wv.vocab[word].index
+				##out_vec = np.zeros(len(word2vecModel.wv.vocab))
+				##out_vec[word2vecModel.wv.vocab[word].index] = 1.0
+				output.append(targetIndex)
 			else:
 				truncations += 1
 				#break
-		trainingSeq = list(zip(seq+[zero_vector_in], [zero_vector_out]+output))
+		trainingSeq = list(zip(seq+[zero_vector_in], [ignore_index]+output))
 		if len(trainingSeq) > minLength: #handles the possibility of truncation
-			yield trainingSeq
+			dataset.append(trainingSeq)
+
+	return dataset
 
 """
 Returns a list of lists of (x,y) numpy vector pairs describing bigram character data: x=s[i], y=s[i-1] for some sequence s.
@@ -216,6 +189,32 @@ def convertToTensorData(dataset):
 	return dataset
 
 """
+
+"""
+def batchifyTensorData(dataset, batchSize=1, ignore_index=-1):
+	batches = []
+	xdim = dataset[0][0][0].shape[0]
+
+	print("Converting numpy data to tensor batches of padded sequences... TODO: incorporate pad_sequence() instead?")
+	for step in range(0,len(dataset),batchSize):
+		batch = dataset[step:step+batchSize]
+		#convert to tensor data
+		maxLength = max(len(seq) for seq in batch)
+		batchX = torch.zeros(batchSize, maxLength, xdim)
+		batchY = torch.zeros(batchSize, maxLength, 1)
+		batchY.fill_(ignore_index)
+
+		for i, seq in enumerate(batch):
+			for j, (x, y) in enumerate(seq):
+				batchX[i,j,:] = torch.tensor(x).to(torch.float32)
+				batchY[i,j,:] = y
+		batches.append((batchX, batchY))
+		#break
+	print("Batch instance size: {}".format(batches[0][0].size()))
+
+	return batches
+
+"""
 Given a dataset as a list of training examples, each of which is a list of (x_t,y_t) numpy vector pairs,
 converts the data to tensor batches of size @batchSize. Note that a constraint on batch data for torch rnn modules
 is that the training sequences in each batch must be exactly the same length, when using the builtin rnn modules.
@@ -223,10 +222,11 @@ This may seem kludgy, but their api contains bidirectional models, so think abou
 model using graph-based computation if the sequences in the batch weren't the same length.
 
 @dataset: A list of training examples, each of which is a list of (x,y) pairs, where x/y are numpy vectors
+
 Returns: @batches, a list of (x,y) tensor pairs, each of which represents one training batch. x's are tensors of size
 		(@batchSize x maxLength x xdim), and y's are tensors of size (@batchSize x maxLength x ydim)
 """
-def convertToTensorBatchData(dataset, batchSize=1):
+def convertToTensorBatchData(dataset, batchSize=1, indexedOutput=False):
 	batches = []
 	xdim = dataset[0][0][0].shape[0]
 	ydim = dataset[0][0][1].shape[0]

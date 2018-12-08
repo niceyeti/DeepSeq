@@ -50,9 +50,9 @@ torch_default_dtype=torch.float32
 
 #A GRU cell with softmax output off the hidden state; one-hot input/output, for a character prediction demo
 #@useRNN: Using the built-in torch RNN is a simple swap, since it uses the same api as the GRU, so pass this to try an RNN
-class DiscreteGRU(torch.nn.Module):
+class EmbeddedGRU(torch.nn.Module):
 	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst, clip=-1, useRNN=False):
-		super(DiscreteGRU, self).__init__()
+		super(EmbeddedGRU, self).__init__()
 		
 		self._optimizerBuilder = OptimizerFactory()
 		self._batchFirst = batchFirst
@@ -174,14 +174,14 @@ class DiscreteGRU(torch.nn.Module):
 			#reset network
 			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=False)
 			x_t = torch.zeros(1, 1, self.xdim, requires_grad=True)
-			#print("hidden size {} x_0 size {}".format(hidden.size(), x_t.size())) 
+			#print("hidden size {} x_0 size {}".format(hidden.size(), x_t.size()))
 			maxIndex = random.randint(0,self.xdim-1)
 			x_t[0][0][ maxIndex ] = 1.0
 			s = reverseEncoding[maxIndex]
 			for _ in range(seqLen):
 				#@x_in output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
 				x_t, z_t, hidden = self(x_t, hidden, verbose=False)
-				#print("hidden size {} x_t size {}".format(hidden.size(), x_t.size())) 
+				#print("hidden size {} x_t size {}".format(hidden.size(), x_t.size()))
 				maxIndex = self.sampleMaxIndex(x_t[0][0], stochastic)
 
 				if not allowRecurrentNoise:
@@ -192,7 +192,7 @@ class DiscreteGRU(torch.nn.Module):
 
 			print(s+"<")
 
-	def train(self, batchedData, epochs, batchSize=5, torchEta=1E-3, momentum=0.9, optimizer="sgd"):
+	def train(self, batchedData, epochs, batchSize=5, torchEta=1E-3, momentum=0.9, optimizer="sgd", ignoreIndex=-1):
 		"""
 		This is just a working example of a torch BPTT network; it is far from correct yet.
 		The hyperparameters and training regime are not optimized or even verified, other than
@@ -216,10 +216,11 @@ class DiscreteGRU(torch.nn.Module):
 		@torchEta: Learning rate
 		@bpttStepLimit: the number of timesteps over which to backpropagate before truncating; some papers are
 				quite generous with this parameter (steps=30 or so), despite possibility of gradient issues.
+		@ignore_index: Output target index values to ignore. These represent missing words or other non-targets. See pytorch docs.
 		"""
 
 		#define the negative log-likelihood loss function
-		criterion = torch.nn.NLLLoss()
+		criterion = torch.nn.NLLLoss(ignore_index=ignoreIndex)
 		#swap different optimizers per training regime
 		optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=torchEta, momentum=momentum, optimizer="adam")
 
@@ -231,16 +232,18 @@ class DiscreteGRU(torch.nn.Module):
 		#try just allows user to press ctrl+c to interrupt training and observe his or her network at any point
 		try:
 			for epoch in range(epochs):
-				x_batch, y_batch = next(batchedData)
+				x_batch, y_batch = batchedData[random.randint(0,len(batchedData)-1)]
 				batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
 				hidden = self.initHidden(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
 				y_pred, z_pred, hidden = self(x_batch, hidden, verbose=False)
 				# y_batch is size (@batchSize x seqLen x ydim). This gets the target indices (argmax of the output) at every timestep t.
-				batchTargets = y_batch.argmax(dim=1)
+				#batchTargets = y_batch.argmax(dim=1)
+				print("Targets: {} {}".format(y_batch.size(), y_batch))
+				#exit()
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
 				# of the target value at each time step t.
-				loss = criterion(y_pred, batchTargets)
+				loss = criterion(y_pred, y_batch)
 				nanDetected = nanDetected or torch.isnan(loss)
 				losses.append(loss.item())
 				if epoch % 50 == 49: #print loss eveyr 50 epochs

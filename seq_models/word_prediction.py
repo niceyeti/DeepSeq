@@ -20,7 +20,7 @@ import torch
 from numpy_rnn import NumpyRnn
 import matplotlib.pyplot as plt
 from custom_torch_rnn import *
-from torch_gru import *
+from embedded_word_prediction_rnn import *
 from data_lib import *
 
 def usage():
@@ -36,7 +36,7 @@ def usage():
 						-embedModel=[path to embedding model],\
 						-trainFile=[path to training text]")
 	print("Models: --torch-gru=[rnn or gru], --numpy-rnn, --custom-torch-rnn")
-	print("Suggested example params: python3 BPTT.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-3 --torch-gru -batchSize=10 -numHiddenLayers=2")
+	print("Suggested example params: python3 word_prediction.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-3 --torch-gru -batchSize=10 -numHiddenLayers=2")
 
 def main():
 	eta = 1E-5
@@ -72,44 +72,32 @@ def main():
 		if "-maxSeqLen" in arg:
 			maxSeqLen = int(arg.split("=")[-1])
 
-	NUMPY_RNN = "--numpy-rnn"
-	CUSTOM_TORCH_RNN = "--custom-torch-rnn"
-	TORCH_GRU = "--torch-gru"
-
 	trainPath = "../data/treasureIsland_normalized.txt"
 	modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
 
-	validModels = {NUMPY_RNN, CUSTOM_TORCH_RNN, TORCH_GRU}
-	if not any([arg in validModels for arg in sys.argv]):
-		print("No model selected; must pass one of {}".format(validModels))
-		usage()
+	ignoreIndex = -1
 
 	print("Building vector dataset...")
-	dataset, vecModel = GetEmbeddedOneHotDatasetGenerator(trainPath, modelPath, limit=numSequences, maxSeqLen=20)
-	print(str([len(seq) for seq in dataset]))
+	dataset, vecModel = GetEmbeddedDataset(trainPath, modelPath, limit=numSequences, maxSeqLen=20, ignoreIndex=ignoreIndex)
+	print("Converting to tensor batch data...")
+	batchedData = batchifyTensorData(dataset, batchSize=miniBatchSize)
 	#print("Randomizing dataset...")
 	#random.shuffle(dataset)
-	print("Converting to tensor batch data...")
-	dataset = convertToTensorBatchData(dataset, batchSize=1)
-	#print(dataset[100])
 
+	print(dataset[100])
 
-	print(str(encodingMap))
+	useRNN = False
 	#print(str(dataset[0]))
 	#print("SHAPE: num examples={} xdim={} ydim={}".format(len(dataset), dataset[0][0][0].shape, dataset[0][0][1].shape))
-	xDim = model.layer1_size
-	yDim = len(model.wv.vocab)
+	xDim = vecModel.layer1_size
+	yDim = len(vecModel.wv.vocab)
 
-	if any("--torch-gru" in arg for arg in sys.argv):
-		#You can pass --torch-gru, --torch-gru=RNN, or --torch-gru=GRU. Added this just since it was so easy to swap an RNN instead of GRU. Default to GRU.
-		useRNN =  "--torch-gru=RNN" in sys.argv or "--torch-gru=rnn" in sys.argv
-		batchedData = convertToTensorBatchData(dataset, batchSize=miniBatchSize)
-		#Try these params: python3 BPTT.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-3 --torch-gru -batchSize=10 -numHiddenLayers=2
-		gru = DiscreteGRU(xDim, hiddenUnits, yDim, numHiddenLayers=numHiddenLayers, batchFirst=True, clip=clip, useRNN=useRNN)
-		print("Training...")
-		gru.train(batchedData, epochs=maxEpochs, batchSize=miniBatchSize, torchEta=eta)
-		gru.generate(reverseEncoding,30,30,stochastic=True)
-		gru.generate(reverseEncoding,30,30,stochastic=False)
+	#Try these params: python3 BPTT.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-3 --torch-gru -batchSize=10 -numHiddenLayers=2
+	gru = EmbeddedGRU(xDim, hiddenUnits, yDim, numHiddenLayers=numHiddenLayers, batchFirst=True, clip=clip, useRNN=useRNN)
+	print("Training...")
+	gru.train(batchedData, epochs=maxEpochs, batchSize=miniBatchSize, torchEta=eta)
+	gru.generate(reverseEncoding,30,30,stochastic=True)
+	gru.generate(reverseEncoding,30,30,stochastic=False)
 
 if __name__ == "__main__":
 	main()
