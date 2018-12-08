@@ -237,12 +237,12 @@ class DiscreteGRU(torch.nn.Module):
 				# Forward pass: Compute predicted y by passing x to the model
 				y_pred, z_pred, hidden = self(x_batch, hidden, verbose=False)
 				# y_batch is size (@batchSize x seqLen x ydim). This gets the target indices (argmax of the output) at every timestep t.
-				batchTargets = y_batch.argmax(dim=1)
-				print("Targets: {}".format(batchTargets))
-				exit()
+				#batchTargets = y_batch.argmax(dim=1)
+				#print("Targets: {} {}".format(batchTargets.size(), batchTargets.dtype))
+				#exit()
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
 				# of the target value at each time step t.
-				loss = criterion(y_pred, batchTargets)
+				loss = criterion(y_pred, batchTargets.squeeze().to(torch.int64))
 				nanDetected = nanDetected or torch.isnan(loss)
 				losses.append(loss.item())
 				if epoch % 50 == 49: #print loss eveyr 50 epochs

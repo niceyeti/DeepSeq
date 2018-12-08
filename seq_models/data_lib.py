@@ -10,7 +10,9 @@ import gensim
 import os
 
 #Best to stick with float; torch is more float32 friendly according to highly reliable online comments
-numpy_default_dtype=np.float32
+NUMPY_DEFAULT_DTYPE=np.float32
+TORCH_DTYPE = torch.float32
+torch.set_default_dtype(TORCH_DTYPE)
 
 ignore_index = -1
 
@@ -97,7 +99,7 @@ Each training sequence is a sequence of tuples of this type, k \in R --> i \in Z
 @ignore_index: A flag value for output that should be ignored. See pytorch docs.
 """
 def GetEmbeddedTrainingSequences(wordFile, word2vecModel, batchSize=1, minLength=-1, ignore_index=-1):
-	zero_vector_in = np.zeros(word2vecModel.layer1_size) #vectors are stored by word2vec as (k,) size numpy arrays
+	zero_vector_in = np.zeros(word2vecModel.layer1_size, dtype=NUMPY_DEFAULT_DTYPE) #vectors are stored by word2vec as (k,) size numpy arrays
 	pad_out = -1
 	truncations = 0
 	dataset = []
@@ -107,7 +109,7 @@ def GetEmbeddedTrainingSequences(wordFile, word2vecModel, batchSize=1, minLength
 		output = [] #target outputs are stored via their corresponding model indices, not one-hot encoded
 		for word in line.split():
 			if word in word2vecModel:
-				tensor = torch.tensor(word2vecModel[word])
+				tensor = torch.tensor(word2vecModel[word], dtype=TORCH_DTYPE)
 				seq.append(tensor)
 				targetIndex = word2vecModel.wv.vocab[word].index
 				##out_vec = np.zeros(len(word2vecModel.wv.vocab))
@@ -157,15 +159,15 @@ def BuildCharSequenceDataset(fpath = "../data/treasureIsland.txt", limit=1000, m
 	charMap['$'] = i + 1
 	print("num classes: {}  num sequences: {}".format(len(charMap.keys()), len(sequences)))
 	numClasses = len(charMap.keys())
-	startVector = np.zeros(shape=(numClasses,1), dtype=numpy_default_dtype)
+	startVector = np.zeros(shape=(numClasses,1), dtype=NUMPY_DEFAULT_DTYPE)
 	startVector[charMap['^'],0] = 1
-	endVector = np.zeros(shape=(numClasses,1), dtype=numpy_default_dtype)
+	endVector = np.zeros(shape=(numClasses,1), dtype=NUMPY_DEFAULT_DTYPE)
 	endVector[charMap['$'],0] = 1
 	for seq in sequences[0:limit]: #word sequence can be truncated, since full text might be explosive
 		sequence = [startVector]
 		#get the raw sequence of one-hot vectors representing characters
 		for c in seq:
-			vec = np.zeros(shape=(numClasses,1),dtype=numpy_default_dtype)
+			vec = np.zeros(shape=(numClasses,1),dtype=NUMPY_DEFAULT_DTYPE)
 			vec[charMap[c],0] = 1
 			sequence.append(vec)
 		sequence.append(endVector)
@@ -185,7 +187,7 @@ Returns: Returns the dataset in the same format as the input datset, just with t
 """
 def convertToTensorData(dataset):
 	print("Converting numpy data items to tensors...")
-	dataset = [[(torch.from_numpy(x.T).to(torch.float32), torch.from_numpy(y.T).to(torch.float32)) for x,y in sequence] for sequence in dataset]
+	dataset = [[(torch.from_numpy(x.T).to(TORCH_DTYPE), torch.from_numpy(y.T).to(TORCH_DTYPE)) for x,y in sequence] for sequence in dataset]
 	return dataset
 
 """
@@ -200,14 +202,14 @@ def batchifyTensorData(dataset, batchSize=1, ignore_index=-1):
 		batch = dataset[step:step+batchSize]
 		#convert to tensor data
 		maxLength = max(len(seq) for seq in batch)
-		batchX = torch.zeros(batchSize, maxLength, xdim)
-		batchY = torch.zeros(batchSize, maxLength, 1)
+		batchX = torch.zeros(batchSize, maxLength, xdim).to(TORCH_DTYPE)
+		batchY = torch.zeros(batchSize, maxLength, 1).to(TORCH_DTYPE)
 		batchY.fill_(ignore_index)
 
 		for i, seq in enumerate(batch):
 			for j, (x, y) in enumerate(seq):
-				batchX[i,j,:] = torch.tensor(x).to(torch.float32)
-				batchY[i,j,:] = y
+				batchX[i,j,:] = torch.tensor(x).to(TORCH_DTYPE)
+				batchY[i,j,:] = torch.tensor(y).to(TORCH_DTYPE)
 		batches.append((batchX, batchY))
 		#break
 	print("Batch instance size: {}".format(batches[0][0].size()))
@@ -240,8 +242,8 @@ def convertToTensorBatchData(dataset, batchSize=1, indexedOutput=False):
 		batchY = torch.zeros(batchSize, maxLength, ydim)
 		for i, seq in enumerate(batch):
 			for j, (x, y) in enumerate(seq):
-				batchX[i,j,:] = torch.from_numpy(x.T).to(torch.float32)
-				batchY[i,j,:] = torch.from_numpy(y.T).to(torch.float32)
+				batchX[i,j,:] = torch.from_numpy(x.T).to(TORCH_DTYPE)
+				batchY[i,j,:] = torch.from_numpy(y.T).to(TORCH_DTYPE)
 		batches.append((batchX, batchY))
 		#break
 	print("Batch instance size: {}".format(batches[0][0].size()))

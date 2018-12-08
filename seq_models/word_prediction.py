@@ -23,6 +23,9 @@ from custom_torch_rnn import *
 from embedded_word_prediction_rnn import *
 from data_lib import *
 
+TORCH_DTYPE = torch.float32
+torch.set_default_dtype(TORCH_DTYPE)
+
 def usage():
 	print("Usage: python3 word_prediction.py")
 	print("Params (these apply differently to selected models): -eta,\
@@ -83,6 +86,8 @@ def main():
 	batchedData = batchifyTensorData(dataset, batchSize=miniBatchSize)
 	#print("Randomizing dataset...")
 	#random.shuffle(dataset)
+
+	print("Class size: {}".format(len(vecModel.wv.vocab)))
 
 	print(dataset[100])
 

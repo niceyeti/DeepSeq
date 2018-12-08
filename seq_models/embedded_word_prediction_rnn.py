@@ -46,7 +46,8 @@ import random
 import matplotlib.pyplot as plt
 from torch_optimizer_builder import OptimizerFactory
 
-torch_default_dtype=torch.float32
+TORCH_DTYPE=torch.float32
+torch.set_default_dtype(TORCH_DTYPE)
 
 #A GRU cell with softmax output off the hidden state; one-hot input/output, for a character prediction demo
 #@useRNN: Using the built-in torch RNN is a simple swap, since it uses the same api as the GRU, so pass this to try an RNN
@@ -67,7 +68,7 @@ class EmbeddedGRU(torch.nn.Module):
 		self.linear = torch.nn.Linear(hdim, ydim)
 		#LogSoftmax @dim refers to the dimension along which LogSoftmax (a function, not a layer) will apply softmax.
 		# dim=2, since the output of the network is size (batchSize x seqLen x ydim) and we want to calculate softmax at each output, hence dimension 2.
-		self.softmax = torch.nn.LogSoftmax(dim=2)
+		self.logSoftmax = torch.nn.LogSoftmax(dim=2)
 		self._initWeights()
 		if clip > 0: #this is used as a flag to determine if clip_grad_norm_ will be called
 			self._clip = 1
@@ -91,7 +92,7 @@ class EmbeddedGRU(torch.nn.Module):
 		"""
 		z_t, hidden = self.gru(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
 		s_t = self.linear(z_t)
-		output = self.softmax(s_t)
+		output = self.logSoftmax(s_t)
 		#print("x_t size: {}  z_t size: {} s_t size: {} output.size(): {} hidden: {}".format(x_t.size(), z_t.size(), s_t.size(), output.size(), hidden.size()))
 		if verbose:
 			print("x: {} hidden: {} z_t: {} s: {} output: {}".format(x_t, hidden, z_t, s_t, output))
@@ -104,9 +105,9 @@ class EmbeddedGRU(torch.nn.Module):
 	"""
 	def initHidden(self, batchSize, numHiddenLayers=1, batchFirst=False, requiresGrad=True):
 		if batchFirst:
-			hidden = torch.zeros(batchSize, numHiddenLayers, self.hdim, requires_grad=requiresGrad)
+			hidden = torch.zeros(batchSize, numHiddenLayers, self.hdim, requires_grad=requiresGrad).to(TORCH_DTYPE)
 		else:
-			hidden = torch.zeros(numHiddenLayers, batchSize, self.hdim, requires_grad=requiresGrad)
+			hidden = torch.zeros(numHiddenLayers, batchSize, self.hdim, requires_grad=requiresGrad).to(TORCH_DTYPE)
 		
 		return hidden
 
@@ -119,9 +120,9 @@ class EmbeddedGRU(torch.nn.Module):
 		a different scale.
 		"""
 		if batchFirst:
-			hidden = scale * torch.randn(batchSize, numHiddenLayers, self.hdim, requires_grad=requiresGrad)
+			hidden = scale * torch.randn(batchSize, numHiddenLayers, self.hdim, requires_grad=requiresGrad).to(TORCH_DTYPE)
 		else:
-			hidden = scale * torch.randn(numHiddenLayers, batchSize, self.hdim, requires_grad=requiresGrad)
+			hidden = scale * torch.randn(numHiddenLayers, batchSize, self.hdim, requires_grad=requiresGrad).to(TORCH_DTYPE)
 		
 		return hidden
 
@@ -239,11 +240,13 @@ class EmbeddedGRU(torch.nn.Module):
 				y_pred, z_pred, hidden = self(x_batch, hidden, verbose=False)
 				# y_batch is size (@batchSize x seqLen x ydim). This gets the target indices (argmax of the output) at every timestep t.
 				#batchTargets = y_batch.argmax(dim=1)
-				print("Targets: {} {}".format(y_batch.size(), y_batch))
+				print("Pred: {} {}  Target: {} {}".format(y_pred.size(), y_pred.dtype, y_batch.size(), y_batch.dtype))
+				print("Targets: {}".format(y_batch))
+				print("Pred argmax {}".format(y_pred.argmax(dim=2).dtype))
 				#exit()
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
 				# of the target value at each time step t.
-				loss = criterion(y_pred, y_batch)
+				loss = criterion(y_pred.argmax(dim=1), y_batch.squeeze()) #criterion input is (N,C), where N=batch-size and C=num classes
 				nanDetected = nanDetected or torch.isnan(loss)
 				losses.append(loss.item())
 				if epoch % 50 == 49: #print loss eveyr 50 epochs
