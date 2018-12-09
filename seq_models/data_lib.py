@@ -192,12 +192,16 @@ def convertToTensorData(dataset):
 
 """
 
+@dataset: A list of training examples, each of which is a list of (x,y) pairs, where x/y are tensors
+
+Returns: @batches, a list of (x,y) tensor pairs, each of which represents one training batch. x's are tensors of size
+		(@batchSize x maxLength x xdim), and y's are tensors of size (@batchSize x maxLength x ydim)
 """
 def batchifyTensorData(dataset, batchSize=1, ignore_index=-1):
 	batches = []
 	xdim = dataset[0][0][0].shape[0]
 
-	print("Converting numpy data to tensor batches of padded sequences... TODO: incorporate pad_sequence() instead?")
+	print("Converting numpy data to tensor batches of xdim={} of padded sequences... TODO: incorporate pad_sequence() instead?".format(xdim))
 	for step in range(0,len(dataset),batchSize):
 		batch = dataset[step:step+batchSize]
 		#convert to tensor data
@@ -209,7 +213,7 @@ def batchifyTensorData(dataset, batchSize=1, ignore_index=-1):
 		for i, seq in enumerate(batch):
 			for j, (x, y) in enumerate(seq):
 				batchX[i,j,:] = torch.tensor(x).to(TORCH_DTYPE)
-				batchY[i,j,:] = torch.tensor(y).to(TORCH_DTYPE)
+				batchY[i,j,0] = torch.tensor(y).to(TORCH_DTYPE)
 		batches.append((batchX, batchY))
 		#break
 	print("Batch instance size: {}".format(batches[0][0].size()))

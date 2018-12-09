@@ -94,6 +94,7 @@ class EmbeddedGRU(torch.nn.Module):
 		s_t = self.linear(z_t)
 		output = self.logSoftmax(s_t)
 		#print("x_t size: {}  z_t size: {} s_t size: {} output.size(): {} hidden: {}".format(x_t.size(), z_t.size(), s_t.size(), output.size(), hidden.size()))
+		#exit()
 		if verbose:
 			print("x: {} hidden: {} z_t: {} s: {} output: {}".format(x_t, hidden, z_t, s_t, output))
 
@@ -237,16 +238,18 @@ class EmbeddedGRU(torch.nn.Module):
 				batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
 				hidden = self.initHidden(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
-				y_pred, z_pred, hidden = self(x_batch, hidden, verbose=False)
+				y_hat, z_pred, hidden = self(x_batch, hidden, verbose=False)
 				# y_batch is size (@batchSize x seqLen x ydim). This gets the target indices (argmax of the output) at every timestep t.
 				#batchTargets = y_batch.argmax(dim=1)
-				print("Pred: {} {}  Target: {} {}".format(y_pred.size(), y_pred.dtype, y_batch.size(), y_batch.dtype))
+				y_batch = y_batch.squeeze().reshape(batchSize,batchSeqLen,-1)
+				print("X batch size {}  Y batch size {}".format(x_batch.size(), y_batch.size()))
+				print("Pred: {} {}  Target: {} {}".format(y_hat.size(), y_hat.dtype, y_batch.squeeze().size(), y_batch.dtype))
 				print("Targets: {}".format(y_batch))
-				print("Pred argmax {}".format(y_pred.argmax(dim=2).dtype))
+				print("Pred argmax dtype {}".format(y_hat.argmax(dim=2).dtype))
 				#exit()
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
 				# of the target value at each time step t.
-				loss = criterion(y_pred.argmax(dim=1), y_batch.squeeze()) #criterion input is (N,C), where N=batch-size and C=num classes
+				loss = criterion(y_hat, y_batch) #criterion input is (N,C), where N=batch-size and C=num classes
 				nanDetected = nanDetected or torch.isnan(loss)
 				losses.append(loss.item())
 				if epoch % 50 == 49: #print loss eveyr 50 epochs
