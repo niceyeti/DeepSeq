@@ -195,7 +195,8 @@ def convertToTensorData(dataset):
 @dataset: A list of training examples, each of which is a list of (x,y) pairs, where x/y are tensors
 
 Returns: @batches, a list of (x,y) tensor pairs, each of which represents one training batch. x's are tensors of size
-		(@batchSize x maxLength x xdim), and y's are tensors of size (@batchSize x maxLength x ydim)
+		(@batchSize x maxLength x xdim), and y's are tensors of size (@batchSize x maxLength), since they are simply
+		target indices (integers, though I'm using TORCH_DTYPE to represent them).
 """
 def batchifyTensorData(dataset, batchSize=1, ignore_index=-1):
 	batches = []
@@ -207,16 +208,18 @@ def batchifyTensorData(dataset, batchSize=1, ignore_index=-1):
 		#convert to tensor data
 		maxLength = max(len(seq) for seq in batch)
 		batchX = torch.zeros(batchSize, maxLength, xdim).to(TORCH_DTYPE)
-		batchY = torch.zeros(batchSize, maxLength, 1).to(TORCH_DTYPE)
+		batchY = torch.zeros(batchSize, maxLength).to(TORCH_DTYPE)
 		batchY.fill_(ignore_index)
 
 		for i, seq in enumerate(batch):
 			for j, (x, y) in enumerate(seq):
 				batchX[i,j,:] = torch.tensor(x).to(TORCH_DTYPE)
-				batchY[i,j,0] = torch.tensor(y).to(TORCH_DTYPE)
+				batchY[i,j] = torch.tensor(y).to(TORCH_DTYPE)
 		batches.append((batchX, batchY))
-		#break
-	print("Batch instance size: {}".format(batches[0][0].size()))
+
+	print("X batch instance size (@batchSize x maxLength x xdim): {}".format(batches[0][0].size()))
+	print("Y batch instance size (@batchSize x maxLength): {}".format(batches[0][1].size()))
+	print("Ignore index (grads for these won't backprop): {}".format(ignore_index))
 
 	return batches
 

@@ -89,7 +89,7 @@ class DiscreteGRU(torch.nn.Module):
 		Returns: @output of size (batchSize x seqLen x ydim), @z_t (new hidden state) of size (batchSize x seqLen x hdim)
 		NOTE: Note that batchSize is in different locations of @hidden on input vs output
 		"""
-		z_t, hidden = self.gru(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
+		z_t, hidden = self.gru(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains final hidden state
 		s_t = self.linear(z_t)
 		output = self.softmax(s_t)
 		#print("x_t size: {}  z_t size: {} s_t size: {} output.size(): {} hidden: {}".format(x_t.size(), z_t.size(), s_t.size(), output.size(), hidden.size()))
@@ -99,7 +99,7 @@ class DiscreteGRU(torch.nn.Module):
 		return output, z_t, hidden
 
 	"""
-	The axes semantics are (num_layers, minibatch_size, hidden_dim).
+	The axis semantics are (num_layers, minibatch_size, hidden_dim).
 	Returns @batchSize copies of the zero vector as the initial state
 	"""
 	def initHidden(self, batchSize, numHiddenLayers=1, batchFirst=False, requiresGrad=True):
@@ -194,9 +194,9 @@ class DiscreteGRU(torch.nn.Module):
 
 	def train(self, batchedData, epochs, batchSize=5, torchEta=1E-3, momentum=0.9, optimizer="sgd"):
 		"""
-		This is just a working example of a torch BPTT network; it is far from correct yet.
+		This is just a working example of a torch gru network; it is far from correct yet.
 		The hyperparameters and training regime are not optimized or even verified, other than
-		showing they work with the same performance as the rnn implemented in numpy from scratch.
+		showing they converge and compete with other implementations.
 
 		According to torch docs it might be possible to leave this is in its explicit example/update form,
 		but instead simply accumulate the gradient updates over multiple time steps, or multiple sequences,
@@ -228,22 +228,22 @@ class DiscreteGRU(torch.nn.Module):
 		losses = []
 		nanDetected = False
 
-		#try just allows user to press ctrl+c to interrupt training and observe his or her network at any point
+		#try/except allows user to press ctrl+c to interrupt training at any point w/out exiting
 		try:
 			for epoch in range(epochs):
 				x_batch, y_batch = batchedData[random.randint(0,len(batchedData)-1)]
 				batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
 				hidden = self.initHidden(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
-				y_pred, z_pred, hidden = self(x_batch, hidden, verbose=False)
+				y_hat, _, hidden = self(x_batch, hidden, verbose=False)
 				# y_batch is size (@batchSize x seqLen x ydim). This gets the target indices (argmax of the output) at every timestep t.
 				batchTargets = y_batch.argmax(dim=1)
-				print("Targets: {} {} {}".format(batchTargets.size(), batchTargets.dtype, batchTargets))
-				print("Y_pred: {} {} {}".format(y_pred.size(), y_pred.dtype, y_pred))
-				exit()
+				print("Targets: {} {}".format(batchTargets.size(), batchTargets.dtype))#, batchTargets))
+				print("y_hat: {} {}".format(y_hat.size(), y_hat.dtype))#, y_hat))
+				#exit()
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
 				# of the target value at each time step t.
-				loss = criterion(y_pred, batchTargets)
+				loss = criterion(y_hat, batchTargets)
 				nanDetected = nanDetected or torch.isnan(loss)
 				losses.append(loss.item())
 				if epoch % 50 == 49: #print loss eveyr 50 epochs

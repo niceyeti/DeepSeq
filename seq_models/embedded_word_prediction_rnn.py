@@ -49,7 +49,7 @@ from torch_optimizer_builder import OptimizerFactory
 TORCH_DTYPE=torch.float32
 torch.set_default_dtype(TORCH_DTYPE)
 
-#A GRU cell with softmax output off the hidden state; one-hot input/output, for a character prediction demo
+#A GRU cell with softmax output off the hidden state; word-embedding input/output, for some word prediction sandboxing.
 #@useRNN: Using the built-in torch RNN is a simple swap, since it uses the same api as the GRU, so pass this to try an RNN
 class EmbeddedGRU(torch.nn.Module):
 	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst, clip=-1, useRNN=False):
@@ -62,9 +62,9 @@ class EmbeddedGRU(torch.nn.Module):
 		self.numHiddenLayers = numHiddenLayers
 		#build the network architecture
 		if not useRNN:
-			self.gru = torch.nn.GRU(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
+			self.rnn = torch.nn.GRU(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
 		else:
-			self.gru = torch.nn.RNN(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
+			self.rnn = torch.nn.RNN(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
 		self.linear = torch.nn.Linear(hdim, ydim)
 		#LogSoftmax @dim refers to the dimension along which LogSoftmax (a function, not a layer) will apply softmax.
 		# dim=2, since the output of the network is size (batchSize x seqLen x ydim) and we want to calculate softmax at each output, hence dimension 2.
@@ -76,8 +76,8 @@ class EmbeddedGRU(torch.nn.Module):
 			self._clip = -1
 
 	def _initWeights(self, initRange=1.0):
-		#print("all: {}".format(self.gru.all_weights))
-		for gruWeights in self.gru.all_weights:
+		#print("all: {}".format(self.rnn.all_weights))
+		for gruWeights in self.rnn.all_weights:
 			for weight in gruWeights:
 				weight.data.uniform_(-initRange, initRange)
 		self.linear.weight.data.uniform_(-initRange, initRange)
@@ -90,13 +90,13 @@ class EmbeddedGRU(torch.nn.Module):
 		Returns: @output of size (batchSize x seqLen x ydim), @z_t (new hidden state) of size (batchSize x seqLen x hdim)
 		NOTE: Note that batchSize is in different locations of @hidden on input vs output
 		"""
-		z_t, hidden = self.gru(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
+		z_t, hidden = self.rnn(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
 		s_t = self.linear(z_t)
 		output = self.logSoftmax(s_t)
-		#print("x_t size: {}  z_t size: {} s_t size: {} output.size(): {} hidden: {}".format(x_t.size(), z_t.size(), s_t.size(), output.size(), hidden.size()))
+		print("x_t size: {} hidden size: {}  z_t size: {} s_t size: {} output.size(): {}".format(x_t.size(), hidden.size(), z_t.size(), s_t.size(), output.size()))
 		#exit()
 		if verbose:
-			print("x: {} hidden: {} z_t: {} s: {} output: {}".format(x_t, hidden, z_t, s_t, output))
+			print("x_t size: {} hidden size: {}  z_t size: {} s_t size: {} output.size(): {}".format(x_t.size(), hidden.size(), z_t.size(), s_t.size(), output.size()))
 
 		return output, z_t, hidden
 
@@ -238,18 +238,19 @@ class EmbeddedGRU(torch.nn.Module):
 				batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
 				hidden = self.initHidden(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
-				y_hat, z_pred, hidden = self(x_batch, hidden, verbose=False)
+				y_hat, _, hidden = self(x_batch, hidden, verbose=False)
 				# y_batch is size (@batchSize x seqLen x ydim). This gets the target indices (argmax of the output) at every timestep t.
 				#batchTargets = y_batch.argmax(dim=1)
-				y_batch = y_batch.squeeze().reshape(batchSize,batchSeqLen,-1)
+				#y_batch = y_batch.squeeze()#.reshape(batchSize,batchSeqLen)
 				print("X batch size {}  Y batch size {}".format(x_batch.size(), y_batch.size()))
-				print("Pred: {} {}  Target: {} {}".format(y_hat.size(), y_hat.dtype, y_batch.squeeze().size(), y_batch.dtype))
+				print("Y hat: {} {}  Target: {} {}".format(y_hat.size(), y_hat.dtype, y_batch.size(), y_batch.dtype))
 				print("Targets: {}".format(y_batch))
-				print("Pred argmax dtype {}".format(y_hat.argmax(dim=2).dtype))
+				print("Pred argmax size {}".format(y_hat.argmax(dim=2).size()))
+				#print(y_hat[0][0])
 				#exit()
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
 				# of the target value at each time step t.
-				loss = criterion(y_hat, y_batch) #criterion input is (N,C), where N=batch-size and C=num classes
+				loss = criterion(y_hat, y_batch.to(torch.int64)) #criterion input is (N,C), where N=batch-size and C=num classes
 				nanDetected = nanDetected or torch.isnan(loss)
 				losses.append(loss.item())
 				if epoch % 50 == 49: #print loss eveyr 50 epochs

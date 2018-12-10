@@ -83,11 +83,9 @@ def main():
 	print("Building vector dataset...")
 	dataset, vecModel = GetEmbeddedDataset(trainPath, modelPath, limit=numSequences, maxSeqLen=20, ignoreIndex=ignoreIndex)
 	print("Converting to tensor batch data...")
-	batchedData = batchifyTensorData(dataset, batchSize=miniBatchSize)
+	batchedData = batchifyTensorData(dataset, miniBatchSize)
 	#print("Randomizing dataset...")
 	#random.shuffle(dataset)
-
-	print("Class size: {}".format(len(vecModel.wv.vocab)))
 
 	print(dataset[100])
 
@@ -96,6 +94,7 @@ def main():
 	#print("SHAPE: num examples={} xdim={} ydim={}".format(len(dataset), dataset[0][0][0].shape, dataset[0][0][1].shape))
 	xDim = vecModel.layer1_size
 	yDim = len(vecModel.wv.vocab)
+	print("X dim: {}  Class size: {}".format(xDim, yDim))
 
 	#Try these params: python3 BPTT.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-3 --torch-gru -batchSize=10 -numHiddenLayers=2
 	gru = EmbeddedGRU(xDim, hiddenUnits, yDim, numHiddenLayers=numHiddenLayers, batchFirst=True, clip=clip, useRNN=useRNN)
