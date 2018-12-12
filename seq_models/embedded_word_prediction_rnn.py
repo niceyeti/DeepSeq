@@ -52,7 +52,7 @@ torch.set_default_dtype(TORCH_DTYPE)
 #A GRU cell with softmax output off the hidden state; word-embedding input/output, for some word prediction sandboxing.
 #@useRNN: Using the built-in torch RNN is a simple swap, since it uses the same api as the GRU, so pass this to try an RNN
 class EmbeddedGRU(torch.nn.Module):
-	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst, clip=-1, useRNN=False):
+	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst=True, clip=-1, useRNN=False):
 		super(EmbeddedGRU, self).__init__()
 		
 		self._optimizerBuilder = OptimizerFactory()
@@ -93,7 +93,7 @@ class EmbeddedGRU(torch.nn.Module):
 		z_t, hidden = self.rnn(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
 		s_t = self.linear(z_t)
 		output = self.logSoftmax(s_t)
-		print("x_t size: {} hidden size: {}  z_t size: {} s_t size: {} output.size(): {}".format(x_t.size(), hidden.size(), z_t.size(), s_t.size(), output.size()))
+		#print("x_t size: {} hidden size: {}  z_t size: {} s_t size: {} output.size(): {}".format(x_t.size(), hidden.size(), z_t.size(), s_t.size(), output.size()))
 		#exit()
 		if verbose:
 			print("x_t size: {} hidden size: {}  z_t size: {} s_t size: {} output.size(): {}".format(x_t.size(), hidden.size(), z_t.size(), s_t.size(), output.size()))
@@ -101,8 +101,8 @@ class EmbeddedGRU(torch.nn.Module):
 		return output, z_t, hidden
 
 	"""
-	The axes semantics are (num_layers, minibatch_size, hidden_dim).
-	Returns @batchSize copies of the zero vector as the initial state
+	The axis semantics are (num_layers, minibatch_size, hidden_dim).
+	Returns @batchSize copies of the zero vector as the initial state; hence size (@batchSize x numHiddenLayers x hdim)
 	"""
 	def initHidden(self, batchSize, numHiddenLayers=1, batchFirst=False, requiresGrad=True):
 		if batchFirst:
@@ -242,15 +242,15 @@ class EmbeddedGRU(torch.nn.Module):
 				# y_batch is size (@batchSize x seqLen x ydim). This gets the target indices (argmax of the output) at every timestep t.
 				#batchTargets = y_batch.argmax(dim=1)
 				#y_batch = y_batch.squeeze()#.reshape(batchSize,batchSeqLen)
-				print("X batch size {}  Y batch size {}".format(x_batch.size(), y_batch.size()))
-				print("Y hat: {} {}  Target: {} {}".format(y_hat.size(), y_hat.dtype, y_batch.size(), y_batch.dtype))
-				print("Targets: {}".format(y_batch))
-				print("Pred argmax size {}".format(y_hat.argmax(dim=2).size()))
+				#print("X batch size {}  Y batch size {}".format(x_batch.size(), y_batch.size()))
+				#print("Y hat: {} {}  Target: {} {}".format(y_hat.size(), y_hat.dtype, y_batch.size(), y_batch.dtype))
+				#print("Targets: {}".format(y_batch))
+				#print("Pred argmax size {}".format(y_hat.argmax(dim=2).size()))
 				#print(y_hat[0][0])
 				#exit()
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
 				# of the target value at each time step t.
-				loss = criterion(y_hat, y_batch.to(torch.int64)) #criterion input is (N,C), where N=batch-size and C=num classes
+				loss = criterion(y_hat.view(-1,1383), y_batch.to(torch.int64).view(-1)) #criterion input is (N,C), where N=batch-size and C=num classes
 				nanDetected = nanDetected or torch.isnan(loss)
 				losses.append(loss.item())
 				if epoch % 50 == 49: #print loss eveyr 50 epochs
