@@ -156,11 +156,10 @@ class EmbeddedGRU(torch.nn.Module):
 
 		return maxIndex
 
-	def generate(self, reverseEncoding, numSeqs=1, seqLen=50, stochastic=False, allowRecurrentNoise=False):
+	def generate(self, vecModel, numSeqs=1, seqLen=50, stochastic=False, allowRecurrentNoise=False):
 		"""
 		
-		@reverseEncoding: A dict mapping integer indices to output strings, for reversing one-hot encodings back
-						  into their domain representation (letters, words, etc).
+		@reverseEncoding: A gensim word2vec model for converting output probabilities and their indices back into words.
 		@numSeqs: Number of sequences to generate
 		@seqLen: The length of each generated sequence, before stopping generation
 		@stochastic: NOT IMPLEMENTED If True, then next character is sampled according to the distribution
@@ -175,24 +174,28 @@ class EmbeddedGRU(torch.nn.Module):
 		for _ in range(numSeqs):
 			#reset network
 			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=False)
-			x_t = torch.zeros(1, 1, self.xdim, requires_grad=True)
+			x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
 			#print("hidden size {} x_0 size {}".format(hidden.size(), x_t.size()))
 			maxIndex = random.randint(0,self.xdim-1)
 			x_t[0][0][ maxIndex ] = 1.0
-			s = reverseEncoding[maxIndex]
+			seq = vecModel.wv.index2entity[maxIndex]
 			for _ in range(seqLen):
 				#@x_in output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
-				x_t, z_t, hidden = self(x_t, hidden, verbose=False)
+				o_t, z_t, hidden = self(x_t, hidden, verbose=False)
 				#print("hidden size {} x_t size {}".format(hidden.size(), x_t.size()))
-				maxIndex = self.sampleMaxIndex(x_t[0][0], stochastic)
-
+				maxIndex = self.sampleMaxIndex(o_t[0][0], stochastic)
+				"""
 				if not allowRecurrentNoise:
-					x_t = x_t.zero_()
-					x_t[0][0][maxIndex] = 1.0
+					o_t = x_t.zero_()
+					o_t[0][0][maxIndex] = 1.0
+				"""
+				word = vecModel.wv.index2entity[maxIndex]
+				#print("W: "+word)
+				seq += (" " + word)
+				#probly a faster way than this to get word vector from word index
+				x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
 
-				s += reverseEncoding[maxIndex]
-
-			print(s+"<")
+			print(seq+"<")
 
 	def train(self, batchedData, epochs, batchSize=5, torchEta=1E-3, momentum=0.9, optimizer="sgd", ignoreIndex=-1):
 		"""

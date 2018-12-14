@@ -100,8 +100,8 @@ def main():
 	gru = EmbeddedGRU(xDim, hiddenUnits, yDim, numHiddenLayers=numHiddenLayers, batchFirst=True, clip=clip, useRNN=useRNN)
 	print("Training...")
 	gru.train(batchedData, epochs=maxEpochs, batchSize=miniBatchSize, torchEta=eta)
-	gru.generate(reverseEncoding,30,30,stochastic=True)
-	gru.generate(reverseEncoding,30,30,stochastic=False)
+	gru.generate(vecModel,30,30,stochastic=True)
+	gru.generate(vecModel,30,30,stochastic=False)
 
 if __name__ == "__main__":
 	main()
