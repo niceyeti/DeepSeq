@@ -158,6 +158,7 @@ class EmbeddedGRU(torch.nn.Module):
 			seq = word
 			for _ in range(seqLen):
 				#@o_t output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
+				#In this special case, @hidden and z_t are the same, since only one-step of prediction has been performed
 				o_t, z_t, hidden = self(x_t, hidden, verbose=False)
 				#self.visualizeOutputs(o_t[0][0], vecModel)
 				maxIndex = self.sampleMaxIndex(o_t[0][0], stochasticChoice)
