@@ -7,36 +7,6 @@ Sample output:
 	
 	python3 BPTT.py -batchSize=4 -maxEpochs=2000 -momentum=0.9 -eta=1E-3 -hiddenUnits=25
 	...
-	1649 2.7261360764503477
-	1699 2.703751826286316
-	1749 2.6933610081672668
-	1799 2.730964684486389
-	1849 2.6367283701896667
-	1899 2.6822508335113526
-	1949 2.603130030632019
-	1999 2.6193048477172853
-	Generating 10 sequences with stochastic=True
-	^ztf^^e^^lzyt^q^zvfff^qvcjzxqmz<
-	ydpzms^xsfbtjjjtjbpswdvpambawjq<
-	ioovff^n^u^rt^wxamvbvzb^w^lpvwf<
-	^npsbsu^zasaotaza^fjqvftamawpzz<
-	ts^^lnwfawnuhaoszzpmzhpmzzzaovp<
-	mfp^h^luhf^uoom^hp^zazppztpmfps<
-	jjjectpfmauswjznvfieovbvatodmva<
-	id bfmfuh$hpzmeoumjnptjjcpnpffz<
-	wet^gv^t^y^xjljjbowfmvtit^hjxuw<
-	kbqeouomoooooemgujeodoqvxzpz^da<
-	Generating 10 sequences with stochastic=False
-	zor wastherryound wasther$$$dly<
-	ver and thering ther$$d$$d$$$d$<
-	oun waskering$$drorky$$$$$d$$$$<
-	noverry wasker$$d$$d$$$d$$$$d$$<
-	ran her wastherr$$d$$d$$$$$$$$$<
-	wand wastherryound$urker$$$d$$$<
-	kand wastherring ther$$$d$$$$d$<
-	ran her wastherr$$d$$d$$$$$$$$$<
-	ghe wastherryound$urrery$$$d$$$<
-	so waskering$doullyour$$$d$$$$$<
 
 
 """
@@ -49,8 +19,14 @@ from torch_optimizer_builder import OptimizerFactory
 TORCH_DTYPE=torch.float32
 torch.set_default_dtype(TORCH_DTYPE)
 
-#A GRU cell with softmax output off the hidden state; word-embedding input/output, for some word prediction sandboxing.
-#@useRNN: Using the built-in torch RNN is a simple swap, since it uses the same api as the GRU, so pass this to try an RNN
+VERBOSE = False
+
+"""
+A GRU cell with softmax output off the hidden state; word-embedding input/output, for some word prediction sandboxing.
+
+
+@useRNN: Using the built-in torch RNN is a simple swap, since it uses the same api as the GRU, so pass this to try an RNN
+"""
 class EmbeddedGRU(torch.nn.Module):
 	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst=True, clip=-1, useRNN=False):
 		super(EmbeddedGRU, self).__init__()
@@ -76,7 +52,6 @@ class EmbeddedGRU(torch.nn.Module):
 			self._clip = -1
 
 	def _initWeights(self, initRange=1.0):
-		#print("all: {}".format(self.rnn.all_weights))
 		for gruWeights in self.rnn.all_weights:
 			for weight in gruWeights:
 				weight.data.uniform_(-initRange, initRange)
@@ -87,21 +62,20 @@ class EmbeddedGRU(torch.nn.Module):
 		@X_t: Input of size (batchSize x seqLen x xdim).
 		@hidden: Hidden states of size (1 x batchSize x hdim), or None, which if passed will initialize hidden states to 0.
 
-		Returns: @output of size (batchSize x seqLen x ydim), @z_t (new hidden state) of size (batchSize x seqLen x hdim)
-		NOTE: Note that batchSize is in different locations of @hidden on input vs output
+		Returns: @output of size (batchSize x seqLen x ydim), @z_t (new hidden state) of size (batchSize x seqLen x hdim), @hidden the final hidden state of dim (1 x @batchSize x hdim)
+		NOTE: Note that @batchSize is in different locations of @hidden on input vs output
 		"""
-		z_t, hidden = self.rnn(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
+		z_t, finalHidden = self.rnn(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
 		s_t = self.linear(z_t)
 		output = self.logSoftmax(s_t)
-		#print("x_t size: {} hidden size: {}  z_t size: {} s_t size: {} output.size(): {}".format(x_t.size(), hidden.size(), z_t.size(), s_t.size(), output.size()))
-		#exit()
 		if verbose:
 			print("x_t size: {} hidden size: {}  z_t size: {} s_t size: {} output.size(): {}".format(x_t.size(), hidden.size(), z_t.size(), s_t.size(), output.size()))
 
-		return output, z_t, hidden
+		return output, z_t, finalHidden
 
 	"""
 	The axis semantics are (num_layers, minibatch_size, hidden_dim).
+	@batchFirst: Determines if batchSize comes before or after numHiddenLayers in tensor dimension
 	Returns @batchSize copies of the zero vector as the initial state; hence size (@batchSize x numHiddenLayers x hdim)
 	"""
 	def initHidden(self, batchSize, numHiddenLayers=1, batchFirst=False, requiresGrad=True):
@@ -127,20 +101,20 @@ class EmbeddedGRU(torch.nn.Module):
 		
 		return hidden
 
-	def sampleMaxIndex(self, v, stochastic=False):
+	def sampleMaxIndex(self, v, stochasticChoice=False):
 		"""
 		Given a stochastic vector (1 x n) vector @v, returns the max index of the vector
 		under one of two strategies:
-			@stochastic = false: just return the index of the max value in the vector (e.g. argmax(v))
-			@stochastic = true: return the index sampled from the distribution of the vector. This
+			@stochasticChoice = false: just return the index of the max value in the vector (e.g. argmax(v))
+			@stochasticChoice = true: return the index sampled from the distribution of the vector. This
 			is done by selecting a uniform random number in [0,1.0], then returning the index containing
 			this number in its range. If v = [0.3, 0.3, 0.4] and r=0.5, returns 1, since the 0.5 occurs
 			in the span of the second entry, [0.3-0.6).
 		"""
 		maxIndex = 0
 		
-		if not stochastic:
-			#output of logsoftmax are log probabilities, so max prediction is max of output vector
+		if not stochasticChoice:
+			#output of logsoftmax are log probabilities, so max prediction is still just the scalar max of output vector
 			maxIndex = int(v.argmax(dim=0))
 		else:
 			#choose maxIndex stochastically according ot the distribution of the output
@@ -156,43 +130,38 @@ class EmbeddedGRU(torch.nn.Module):
 
 		return maxIndex
 
-	def generate(self, vecModel, numSeqs=1, seqLen=50, stochastic=False, allowRecurrentNoise=False):
+	def generate(self, vecModel, numSeqs=1, seqLen=50, stochasticChoice=False, allowRecurrentNoise=False):
 		"""
 		
 		@reverseEncoding: A gensim word2vec model for converting output probabilities and their indices back into words.
 		@numSeqs: Number of sequences to generate
 		@seqLen: The length of each generated sequence, before stopping generation
-		@stochastic: NOT IMPLEMENTED If True, then next character is sampled according to the distribution
-					over output letters, as opposed to selecting the maximum probability prediction.
+		@stochasticChoice: If True, then next character is sampled according to the softmax distribution
+					over output words, as opposed to selecting the maximum probability prediction. Note for large models, this
+					likely won't work very well, since the portion of probability assigned to terms is likely very small even
+					for the max term.
 		@allowRecurrentNoise: Just an interesting parameter to observe: during generation, the output y'
 		becomes the input to the next stage, and canonically should be one-hotted such that only the max
 		entry is 1.0, and all others zero. However you can instead not one-hot the vector, leaving other noise
 		in the vector. No idea what this will do, its just interesting to leave in.
 		"""
-		print("Generating {} sequences with stochastic={}".format(numSeqs,stochastic))
+		print("Generating {} sequences with stochasticChoice={}".format(numSeqs,stochasticChoice))
 
 		for _ in range(numSeqs):
 			#reset network
 			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=False)
 			x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
-			#print("hidden size {} x_0 size {}".format(hidden.size(), x_t.size()))
 			maxIndex = random.randint(0,self.xdim-1)
-			x_t[0][0][ maxIndex ] = 1.0
-			seq = vecModel.wv.index2entity[maxIndex]
+			word = vecModel.wv.index2entity[maxIndex]
+			x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
+			seq = word
 			for _ in range(seqLen):
-				#@x_in output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
+				#@o_t output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
 				o_t, z_t, hidden = self(x_t, hidden, verbose=False)
-				#print("hidden size {} x_t size {}".format(hidden.size(), x_t.size()))
-				maxIndex = self.sampleMaxIndex(o_t[0][0], stochastic)
-				"""
-				if not allowRecurrentNoise:
-					o_t = x_t.zero_()
-					o_t[0][0][maxIndex] = 1.0
-				"""
+				maxIndex = self.sampleMaxIndex(o_t[0][0], stochasticChoice)
 				word = vecModel.wv.index2entity[maxIndex]
-				#print("W: "+word)
 				seq += (" " + word)
-				#probly a faster way than this to get word vector from word index
+				#TODO: probly a faster way than this to get word vector from word index
 				x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
 
 			print(seq+"<")
@@ -241,16 +210,7 @@ class EmbeddedGRU(torch.nn.Module):
 				batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
 				hidden = self.initHidden(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
-				y_hat, _, hidden = self(x_batch, hidden, verbose=False)
-				# y_batch is size (@batchSize x seqLen x ydim). This gets the target indices (argmax of the output) at every timestep t.
-				#batchTargets = y_batch.argmax(dim=1)
-				#y_batch = y_batch.squeeze()#.reshape(batchSize,batchSeqLen)
-				#print("X batch size {}  Y batch size {}".format(x_batch.size(), y_batch.size()))
-				#print("Y hat: {} {}  Target: {} {}".format(y_hat.size(), y_hat.dtype, y_batch.size(), y_batch.dtype))
-				#print("Targets: {}".format(y_batch))
-				#print("Pred argmax size {}".format(y_hat.argmax(dim=2).size()))
-				#print(y_hat[0][0])
-				#exit()
+				y_hat, _, hidden = self(x_batch, hidden, verbose=VERBOSE)
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
 				# of the target value at each time step t.
 				loss = criterion(y_hat.view(-1,1383), y_batch.to(torch.int64).view(-1)) #criterion input is (N,C), where N=batch-size and C=num classes
