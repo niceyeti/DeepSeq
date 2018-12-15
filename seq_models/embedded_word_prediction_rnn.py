@@ -221,7 +221,7 @@ class EmbeddedGRU(torch.nn.Module):
 		#define the negative log-likelihood loss function
 		criterion = torch.nn.NLLLoss(ignore_index=ignoreIndex)
 		#swap different optimizers per training regime
-		optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=torchEta, momentum=momentum, optimizer="adam")
+		optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=torchEta, momentum=momentum, optimizer="sgd")
 
 		ct = 0
 		k = 20
@@ -235,7 +235,7 @@ class EmbeddedGRU(torch.nn.Module):
 				batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
 				hidden = self.initHidden(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
-				y_hat, _, hidden = self(x_batch, hidden, verbose=VERBOSE)
+				y_hat, _, _ = self(x_batch, hidden, verbose=VERBOSE)
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
 				# of the target value at each time step t.
 				loss = criterion(y_hat.view(-1,1383), y_batch.to(torch.int64).view(-1)) #criterion input is (N,C), where N=batch-size and C=num classes
