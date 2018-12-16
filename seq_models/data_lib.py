@@ -74,7 +74,7 @@ Returns: Data as a list of sequences, each sequence a list of numpy one-hot enco
 
 TODO: This could be implemented as a generator of batches, instead of a monolothic dataset, for efficiency.
 """
-def GetEmbeddedDataset(trainTextPath, wordModelPath, batchSize=1, limit=1000, maxSeqLen=1000000, minSeqLength=5, ignoreIndex=-1):
+def GetEmbeddedDataset(trainTextPath, wordModelPath, limit=1000, maxSeqLen=1000000, minSeqLength=5, ignoreIndex=-1):
 	if not os.path.exists(trainTextPath):
 		print("ERROR training text path not found: "+trainTextPath)
 		exit()
@@ -85,7 +85,7 @@ def GetEmbeddedDataset(trainTextPath, wordModelPath, batchSize=1, limit=1000, ma
 	model = gensim.models.Word2Vec.load(wordModelPath)
 	dataset = None
 	trainFile = open(trainTextPath, "r")
-	dataset = GetEmbeddedTrainingSequences(trainFile, model, batchSize, minLength=minSeqLength, ignore_index=ignoreIndex)
+	dataset = GetEmbeddedTrainingSequences(trainFile, model, minLength=minSeqLength, ignore_index=ignoreIndex)
 
 	return dataset, model
 
@@ -98,7 +98,7 @@ Each training sequence is a sequence of tuples of this type, k \in R --> i \in Z
 
 @ignore_index: A flag value for output that should be ignored. See pytorch docs.
 """
-def GetEmbeddedTrainingSequences(wordFile, word2vecModel, batchSize=1, minLength=-1, ignore_index=-1):
+def GetEmbeddedTrainingSequences(wordFile, word2vecModel, minLength=-1, ignore_index=-1):
 	zero_vector_in = np.zeros(word2vecModel.layer1_size, dtype=NUMPY_DEFAULT_DTYPE) #vectors are stored by word2vec as (k,) size numpy arrays
 	pad_out = -1
 	truncations = 0
@@ -234,7 +234,7 @@ model using graph-based computation if the sequences in the batch weren't the sa
 
 Returns: @batches, a list of (x,y) tensor pairs, each of which represents one training batch. x's are tensors of size
 		(@batchSize x maxLength x xdim), and y's are tensors of size (@batchSize x maxLength x ydim)
-"""
+
 def convertToTensorBatchData(dataset, batchSize=1, indexedOutput=False):
 	batches = []
 	xdim = dataset[0][0][0].shape[0]
@@ -256,3 +256,4 @@ def convertToTensorBatchData(dataset, batchSize=1, indexedOutput=False):
 	print("Batch instance size: {}".format(batches[0][0].size()))
 
 	return batches
+"""

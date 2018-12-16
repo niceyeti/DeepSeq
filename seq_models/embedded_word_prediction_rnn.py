@@ -165,6 +165,7 @@ class EmbeddedGRU(torch.nn.Module):
 				word = vecModel.wv.index2entity[maxIndex]
 				seq += (" " + word)
 				#TODO: probly a faster way than this to get word vector from word index
+				x_t.zero_()
 				x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
 
 			print(seq+"<")
@@ -191,7 +192,7 @@ class EmbeddedGRU(torch.nn.Module):
 		plot = plt.plot(xs,ys)
 		return plot
 
-	def train(self, batchedData, epochs, batchSize=5, torchEta=1E-3, momentum=0.9, optimizer="sgd", ignoreIndex=-1):
+	def train(self, batchedData, epochs, batchSize=5, torchEta=1E-3, momentum=0.9, optimizer="adam", ignoreIndex=-1):
 		"""
 		This is just a working example of a torch BPTT network; it is far from correct yet.
 		The hyperparameters and training regime are not optimized or even verified, other than
@@ -221,7 +222,7 @@ class EmbeddedGRU(torch.nn.Module):
 		#define the negative log-likelihood loss function
 		criterion = torch.nn.NLLLoss(ignore_index=ignoreIndex)
 		#swap different optimizers per training regime
-		optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=torchEta, momentum=momentum, optimizer="sgd")
+		optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=torchEta, momentum=momentum, optimizer=optimizer)
 
 		ct = 0
 		k = 20

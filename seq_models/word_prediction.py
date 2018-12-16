@@ -39,7 +39,7 @@ def usage():
 						-embedModel=[path to embedding model],\
 						-trainFile=[path to training text]")
 	print("Models: --torch-gru=[rnn or gru], --numpy-rnn, --custom-torch-rnn")
-	print("Suggested example params: python3 word_prediction.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-2 --torch-gru -batchSize=3 -numHiddenLayers=1 -hiddenUnits=300")
+	print("Suggested example params: python3 word_prediction.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-2 -batchSize=3 -numHiddenLayers=1 -hiddenUnits=300")
 
 def main():
 	eta = 1E-5
@@ -74,6 +74,8 @@ def main():
 			clip = float(arg.split("=")[-1])
 		if "-maxSeqLen" in arg:
 			maxSeqLen = int(arg.split("=")[-1])
+		if "--rnn" in arg.lower() or "--usernn" in arg.lower():
+			useRNN = True
 
 	trainPath = "../data/treasureIsland_normalized.txt"
 	modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
