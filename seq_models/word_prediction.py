@@ -2,7 +2,7 @@
 Using the torch-based GRU, implements a word prediction model using vector word embeddings as input.
 
 Using an algorithm such as word2vec, each word in a training corpus is converted to a k-dimensional vector.
-These inputs are fed to a recurrent network, whose outputs are one-hot term predictions.
+These inputs are fed to a recurrent network, whose outputs model one-hot term predictions.
 
 It would also be possible to predict word embeddings on the output, but the loss function would likely have to be
 different. Predicting a k-dimensional real-valued vector seems less stable than clamping to one-hot output loss

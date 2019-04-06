@@ -1,0 +1,59 @@
+Qualitative problem statements:
+	1) Document regression: Given document d, estimate the sentiment of d: (d) -> s, where s \in R
+	2) Topic regression: Given topic T, estimate sentiment of T over document 
+		*remember you could try training in both directions: predict T from sentiment, predict sentiment from T (and its context), or similar training strategies
+
+The core architecture challenges are:
+	1) sentiment estimation has no target, and a noisy one--the target itself must be estimated and trained on
+	2) difficult to validate models, no inherent spatial meaning to output (except for +1/-1 encoding on classification tasks with labeled data)
+	3) Building contextual models, then estimating from them is difficult because the result entirely depends on the training distribution. And evidently
+	   language in different domains is very different.
+
+Objective: estimate the sentiment of a particular topic T over document set D. 
+
+
+
+Route 1: Estimate the net sentiment of each document (regression). For a particular topic T, the net sentiment
+is the sum over the documents on the topic.
+
+Algorithm:
+	Given a document d, estimate its sentiment wrt a specific topic, just as with ppmi sentiment
+
+	Input: document d, sentiment lexicon S (of positive terms S+ and negative terms S-), gensim wordvec model M
+	Init: net_sentiment = 0	
+
+	for word w in d:
+		net_sentiment += [ dist(w, S+, M) - dist(w, S-, M) ]
+
+	return net_sentiment
+	
+This estimates the net sentiment of the document, with respect to all words in the document, not just the topic
+terms, via the gensim model M.
+
+Drawbacks: If dist is a vector function like cosine-similarity, the complexity of dist is |S| dot-products.
+so if an entire document set contains k words, then cos-sim requires k * |S| dot products (minus stop words).
+
+
+
+
+
+Gensim issues: Word2vec carries multiple issues for estimation, namely that its vectors rest in a purely representational
+space, and has tons of hyperparameters (vector size, training iterations, window size, cbow vs skipgram, etc).
+
+
+Junk room:
+
+Predicting sentiment is equivalent to predicting sentiment words from context. So train accordingly, to predict sentiment words.
+1) Derive a context (representation or feature space representation) from a document
+2) Predict output words. The sum of these output predictions (s+ - S-) gives a net sentiment, or more formally, the net sentiment
+is the dot product of the 1's vector with all output term probabilities S
+
+Training regimes
+	1) Given a document, predict only the sentiment terms from context. This gives a model for predicting positive and negative terms from context.
+	
+
+
+
+
+
+

@@ -98,8 +98,8 @@ Each training sequence is a sequence of tuples of this type, k \in R --> i \in Z
 
 @ignore_index: A flag value for output that should be ignored. See pytorch docs.
 """
-def GetEmbeddedTrainingSequences(wordFile, word2vecModel, minLength=-1, ignore_index=-1):
-	zero_vector_in = np.zeros(word2vecModel.layer1_size, dtype=NUMPY_DEFAULT_DTYPE) #vectors are stored by word2vec as (k,) size numpy arrays
+def GetEmbeddedTrainingSequences(wordFile, vecModel, minLength=-1, ignore_index=-1):
+	zero_vector_in = np.zeros(vecModel.layer1_size, dtype=NUMPY_DEFAULT_DTYPE) #vectors are stored by word2vec as (k,) size numpy arrays
 	pad_out = -1
 	truncations = 0
 	dataset = []
@@ -108,12 +108,12 @@ def GetEmbeddedTrainingSequences(wordFile, word2vecModel, minLength=-1, ignore_i
 		seq = []
 		output = [] #target outputs are stored via their corresponding model indices, not one-hot encoded
 		for word in line.split():
-			if word in word2vecModel:
-				tensor = torch.tensor(word2vecModel[word], dtype=TORCH_DTYPE)
+			if word in vecModel:
+				tensor = torch.tensor(vecModel[word], dtype=TORCH_DTYPE)
 				seq.append(tensor)
-				targetIndex = word2vecModel.wv.vocab[word].index
-				##out_vec = np.zeros(len(word2vecModel.wv.vocab))
-				##out_vec[word2vecModel.wv.vocab[word].index] = 1.0
+				targetIndex = vecModel.wv.vocab[word].index
+				##out_vec = np.zeros(len(vecModel.wv.vocab))
+				##out_vec[vecModel.wv.vocab[word].index] = 1.0
 				output.append(targetIndex)
 			else:
 				truncations += 1
