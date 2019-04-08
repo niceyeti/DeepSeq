@@ -195,7 +195,7 @@ class EmbeddedGRU(torch.nn.Module):
 		plot = plt.plot(xs,ys)
 		return plot
 
-	def train(self, batchedData, epochs, batchSize=5, torchEta=1E-3, momentum=0.9, optimizerStr="adam", ignoreIndex=-1):
+	def train(self, dataset, epochs, torchEta=1E-3, momentum=0.9, optimizerStr="adam", ignoreIndex=-1):
 		"""
 		This is just a working example of a torch BPTT network; it is far from correct yet.
 		The hyperparameters and training regime are not optimized or even verified, other than
@@ -235,7 +235,7 @@ class EmbeddedGRU(torch.nn.Module):
 		#try just allows user to press ctrl+c to interrupt training and observe his or her network at any point
 		try:
 			for epoch in range(epochs):
-				x_batch, y_batch = batchedData[random.randint(0,len(batchedData)-1)]
+				x_batch, y_batch = dataset.getNextBatch()
 				batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
 				hidden = self.initHidden(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
