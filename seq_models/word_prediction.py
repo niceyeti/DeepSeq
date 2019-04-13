@@ -22,22 +22,26 @@ import matplotlib.pyplot as plt
 from custom_torch_rnn import *
 from embedded_word_prediction_rnn import *
 from data_lib import *
+from embedded_dataset import EmbeddedDataset
 
 TORCH_DTYPE = torch.float32
 torch.set_default_dtype(TORCH_DTYPE)
 
 def usage():
 	print("Usage: python3 word_prediction.py")
-	print("Params (these apply differently to selected models): -eta,\
-						-maxEpochs/-epochs, \
-						-hiddenUnits,\
-						-bpStepLimit,\
-						-numSequences,\
-						-miniBatchSize\
-						-maxSeqLen,\
-						-clip,\
-						-vecModel=[path to embedding model],\
-						-trainFile=[path to training text]")
+	print("""Params (these apply differently to selected models):
+	-eta
+	-maxEpochs/-epochs 
+	-hiddenUnits
+	-bpStepLimit
+	-numSequences
+	-miniBatchSize
+	-maxSeqLen
+	-clip
+	-modelPath=[path to embedding model]
+	-trainPath=[path to training text]
+	--useL2Norm: normalize word vectors in training inputs (currently inefficient, as term vector norms are not memo'ized)
+""")
 	print("Models: --torch-gru=[rnn or gru], --numpy-rnn, --custom-torch-rnn")
 	print("Suggested example params: python3 word_prediction.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-2 -batchSize=3 -numHiddenLayers=1 -hiddenUnits=300")
 
@@ -53,9 +57,12 @@ def main():
 	numSequences = 100000
 	clip = -1.0 #Only applies to pytorch rnn/gru's, to mitigate exploding gradients, but I don't suggest using it. 
 	saveMinWeights = "--saveMinWeights" in sys.argv
+	useL2Norm = "--useL2Norm" in sys.argv
 	for arg in sys.argv:
-		if "-vecModel=" in arg:
-			vecModel = arg.split("=")[-1]
+		if "-trainPath=" in arg:
+			trainPath = arg.split("=")[-1]
+		if "-modelPath=" in arg:
+			modelPath = arg.split("=")[-1]
 		if "-hiddenUnits=" in arg:
 			hiddenUnits = int(arg.split("=")[-1])
 		if "-eta=" in arg:
@@ -78,34 +85,41 @@ def main():
 			maxSeqLen = int(arg.split("=")[-1])
 		if "--rnn" in arg.lower() or "--usernn" in arg.lower():
 			useRNN = True
-
+	
 	trainPath = "../data/treasureIsland_normalized.txt"
 	modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
 
 	ignoreIndex = -1
 
-	print("Building vector dataset...")
-	dataset, vecModel = GetEmbeddedDataset(trainPath, modelPath, limit=numSequences, maxSeqLen=20, ignoreIndex=ignoreIndex)
-	print("Converting to tensor batch data...")
-	batchedData = batchifyTensorData(dataset, miniBatchSize)
-	#print("Randomizing dataset...")
-	#random.shuffle(dataset)
-
-	print(dataset[100])
+	dataset = EmbeddedDataset( \
+		trainPath, \
+		modelPath, \
+		batchSize = 3, \
+		torchDtype = TORCH_DTYPE, \
+		limit = -1, \
+		maxSeqLength = 200, \
+		minSeqLength = 10, \
+		useL2Norm = False)
 
 	useRNN = False
-	#print(str(dataset[0]))
-	#print("SHAPE: num examples={} xdim={} ydim={}".format(len(dataset), dataset[0][0][0].shape, dataset[0][0][1].shape))
-	xDim = vecModel.layer1_size
-	yDim = len(vecModel.wv.vocab)
+	xDim = dataset.Model.layer1_size
+	yDim = len(dataset.Model.wv.vocab)
 	print("X dim: {}  Class size: {}".format(xDim, yDim))
 
 	#Try these params: python3 BPTT.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-3 --torch-gru -batchSize=10 -numHiddenLayers=2
-	gru = EmbeddedGRU(xDim, hiddenUnits, yDim, numHiddenLayers=numHiddenLayers, batchFirst=True, clip=clip, useRNN=useRNN)
+	gru = EmbeddedGRU( \
+		xDim, \
+		hiddenUnits, \
+		yDim, \
+		numHiddenLayers=numHiddenLayers, \
+		batchFirst=True, \
+		clip=clip, \
+		useRNN=useRNN)
 	print("Training...")
-	gru.train(batchedData, epochs=maxEpochs, batchSize=miniBatchSize, torchEta=eta, momentum=momentum)
-	gru.generate(vecModel,30,30,stochasticChoice=True)
-	gru.generate(vecModel,30,30,stochasticChoice=False)
+
+	gru.train(dataset, epochs=maxEpochs, torchEta=eta, momentum=momentum)
+	gru.generate(modelPath,30,30,stochasticChoice=True)
+	gru.generate(modelPath,30,30,stochasticChoice=False)
 
 if __name__ == "__main__":
 	main()

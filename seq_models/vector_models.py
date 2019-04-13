@@ -8,6 +8,8 @@ IIRC, these models are the smaller ones (vectors only), with 'vec' somewhere in 
 This file is duplicated in Sentinel.
 """
 
+import gensim
+
 
 #A wrapper to make fasttext KeyedVector model look like a gensim Word2Vec model
 class FastTextModelWrapper(object):

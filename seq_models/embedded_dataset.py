@@ -18,8 +18,12 @@ It could also become quite slow (many disk reads) if batches are created slower 
 """
 
 import torch
-TORCH_DTYPE=torch.float32
 import vector_models
+import os
+import numpy as np
+
+TORCH_DTYPE=torch.float32
+NUMPY_DEFAULT_DTYPE=np.float32
 
 #The index value to ignore in torch training. This value is used by torch as a label for output categories not to backprop.
 IGNORE_INDEX = -1
@@ -35,15 +39,16 @@ class EmbeddedDataset(object):
 			minSeqLength = -1,				\
 			useL2Norm = False):  #If true, use l2-norm of each word vector
 		if not os.path.exists(trainPath):
-			except Exception("ERROR training text path not found: "+trainTextPath)
+			raise Exception("ERROR training text path not found: "+trainTextPath)
 		if not os.path.exists(modelPath):
-			except Exception("ERROR word model path not found: "+wordModelPath)
+			raise Exception("ERROR word model path not found: "+wordModelPath)
 		self._torchDtype = torchDtype
 		#TODO: try True. This converts vectors to l2 norm. Might also just norm the entire model beforehand instead of re-norming every time the same word is looked up.
 		self._useL2Norm = False
 		self._maxSeqLength = maxSeqLength
 		self._limit = limit
 		self._minSeqLength = minSeqLength
+		self._batchSize = batchSize
 		self._trainFile = open(trainPath, "r")
 		self.Model = vector_models.loadModel(modelPath)
 		print("Built embedded dataset. Training file will be repeated, once examples are exhausted.")
@@ -68,7 +73,7 @@ class EmbeddedDataset(object):
 	Each training sequence is a sequence of tuples of this type, k \in R --> i \in Z+
 	"""
 	def getNextBatch(self):
-		zero_vector_in = np.zeros(vecModel.layer1_size, dtype=self._torchDtype) #vectors are stored by word2vec as (k,) size numpy arrays
+		zero_vector_in = np.zeros(self.Model.layer1_size, dtype=NUMPY_DEFAULT_DTYPE) #vectors are stored by word2vec as (k,) size numpy arrays
 		truncations = 0
 		batch = []
 
@@ -79,17 +84,18 @@ class EmbeddedDataset(object):
 			outputs = []
 			#note: min sequence length is checked later below, since due to omissions (words missing vectors) we don't immediately know the length of the sequence
 			for word in line.split():
-				if word in vecModel.vocab:
-					tensor = torch.tensor(vecModel.word_vec(word, self._useL2Norm), dtype=self._torchDtype)
+				if word in self.Model.wv.vocab:
+					tensor = torch.tensor(self.Model.wv.word_vec(word, self._useL2Norm), dtype=self._torchDtype)
 					seq.append(tensor)
-					targetIndex = vecModel.vocab[word].index
+					targetIndex = self.Model.wv.vocab[word].index
 					outputs.append(targetIndex)
 				else:
 					truncations += 1
 				if self._maxSeqLength > 0 and len(seq) > self._maxSeqLength:
 					break
-			trainingSeq = list(zip(seq+[zero_vector_in], [ignore_index]+outputs))
-			if len(trainingSeq) > minLength: #handles words missing vectors
+			trainingSeq = list(zip(seq+[zero_vector_in], [self.IgnoreIndex]+outputs))
+			print("SEQ: {}".format(trainingSeq))
+			if len(trainingSeq) > self._minSeqLength: #handles words missing vectors
 				batch.append(trainingSeq)
 
 		return self._batchifyTensorData(batch, self._batchSize, self.IgnoreIndex)
@@ -98,6 +104,8 @@ class EmbeddedDataset(object):
 		"""
 		The ugliest function, required by torch sequential batch-training models.
 		"""
+		print(str(batch))
+		print("BATCH SHAPE: {}".format(batch[0][0].shape))
 		batches = []
 		xdim = batch[0][0].shape[0]
 
