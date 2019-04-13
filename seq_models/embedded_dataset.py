@@ -51,6 +51,8 @@ class EmbeddedDataset(object):
 		self._batchSize = batchSize
 		self._trainFile = open(trainPath, "r")
 		self.Model = vector_models.loadModel(modelPath)
+		#may not belong here, but works better instead of building these every time we read a training sample
+		self._zero_vector_in = np.zeros(self.Model.layer1_size, dtype=NUMPY_DEFAULT_DTYPE) #vectors are stored by word2vec as (k,) size numpy arrays
 		print("Built embedded dataset. Training file will be repeated, once examples are exhausted.")
 		print("Consider passing useL2Norm to observe the effect of normalizing term vectors.")
 		self.IgnoreIndex = IGNORE_INDEX
@@ -73,11 +75,28 @@ class EmbeddedDataset(object):
 	Each training sequence is a sequence of tuples of this type, k \in R --> i \in Z+
 	"""
 	def getNextBatch(self):
-		zero_vector_in = np.zeros(self.Model.layer1_size, dtype=NUMPY_DEFAULT_DTYPE) #vectors are stored by word2vec as (k,) size numpy arrays
-		truncations = 0
 		batch = []
 
-		for i in range(self._batchSize):
+		print("WARNING: not yet handling out-of-model terms!!! See @truncations")
+
+		while len(batch) < self._batchSize:
+			trainingSeq = self._getTrainingSequence()
+			if trainingSeq is not None:
+				batch.append(trainingSeq)
+
+		return self._batchifyTensorData(batch, self._batchSize, self.IgnoreIndex)
+
+	def _getTrainingSequence(self):
+		"""
+		Reads single training sequence, reading lines until it constructs a sufficient example in terms of min/max length.
+		Returns None if no example found.
+		"""
+		success = False
+		retries = 0
+		maxRetries = 100
+		truncations = 0
+
+		while not success and retries < maxRetries:
 			line = self._getLine()
 			seq = []
 			#target outputs are stored via their corresponding model indices, not one-hot encoded
@@ -93,12 +112,24 @@ class EmbeddedDataset(object):
 					truncations += 1
 				if self._maxSeqLength > 0 and len(seq) > self._maxSeqLength:
 					break
-			trainingSeq = list(zip(seq+[zero_vector_in], [self.IgnoreIndex]+outputs))
-			print("SEQ: {}".format(trainingSeq))
-			if len(trainingSeq) > self._minSeqLength: #handles words missing vectors
-				batch.append(trainingSeq)
+			trainingSeq = list(zip(seq+[self._zero_vector_in], [self.IgnoreIndex]+outputs))
+			if self._isValidTrainingSequence(trainingSeq):
+				success = True
+			else:
+				retries += 1
 
-		return self._batchifyTensorData(batch, self._batchSize, self.IgnoreIndex)
+		if not success and retries >= maxRetries:
+			print("WARNING maxRetires reached in dataset._getTrainingSequence")
+			trainingSeq = None
+
+		return trainingSeq
+
+	def _isValidTrainingSequence(self, seq):
+		#Returns true if @seq meets length requirements
+		return (self._minSeqLength < 0 or \
+			len(seq) >= self._minSeqLength) and \
+			(self._maxSeqLength < 0 or \
+			len(seq) <= self._maxSeqLength)
 
 	def _batchifyTensorData(self, batch, batchSize=1, ignore_index=-1):
 		"""
