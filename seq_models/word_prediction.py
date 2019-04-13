@@ -36,7 +36,7 @@ def usage():
 						-miniBatchSize\
 						-maxSeqLen,\
 						-clip,\
-						-embedModel=[path to embedding model],\
+						-vecModel=[path to embedding model],\
 						-trainFile=[path to training text]")
 	print("Models: --torch-gru=[rnn or gru], --numpy-rnn, --custom-torch-rnn")
 	print("Suggested example params: python3 word_prediction.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-2 -batchSize=3 -numHiddenLayers=1 -hiddenUnits=300")
@@ -54,6 +54,8 @@ def main():
 	clip = -1.0 #Only applies to pytorch rnn/gru's, to mitigate exploding gradients, but I don't suggest using it. 
 	saveMinWeights = "--saveMinWeights" in sys.argv
 	for arg in sys.argv:
+		if "-vecModel=" in arg:
+			vecModel = arg.split("=")[-1]
 		if "-hiddenUnits=" in arg:
 			hiddenUnits = int(arg.split("=")[-1])
 		if "-eta=" in arg:

@@ -9,7 +9,7 @@ import torch
 import gensim
 import os
 
-#Best to stick with float; torch is more float32 friendly according to highly reliable online comments
+#Best to stick with float; torch is more float32 friendly according to highly reliable anonymous online comments
 NUMPY_DEFAULT_DTYPE=np.float32
 TORCH_DTYPE = torch.float32
 torch.set_default_dtype(TORCH_DTYPE)

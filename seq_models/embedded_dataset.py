@@ -92,13 +92,12 @@ class EmbeddedDataset(object):
 			if len(trainingSeq) > minLength: #handles words missing vectors
 				batch.append(trainingSeq)
 
-		return self._batchifyTensorData(batch)
+		return self._batchifyTensorData(batch, self._batchSize, self.IgnoreIndex)
 
 	def _batchifyTensorData(self, batch, batchSize=1, ignore_index=-1):
 		"""
 		The ugliest function, required by torch sequential batch-training models.
 		"""
-
 		batches = []
 		xdim = batch[0][0].shape[0]
 
