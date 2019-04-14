@@ -236,7 +236,8 @@ class EmbeddedGRU(torch.nn.Module):
 		try:
 			for epoch in range(epochs):
 				x_batch, y_batch = dataset.getNextBatch()
-				batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
+				#batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
+				batchSize = x_batch.shape[0]
 				hidden = self.initHidden(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
 				y_hat, _, _ = self(x_batch, hidden, verbose=VERBOSE)

@@ -118,8 +118,8 @@ def main():
 	print("Training...")
 
 	gru.train(dataset, epochs=maxEpochs, torchEta=eta, momentum=momentum)
-	gru.generate(modelPath,30,30,stochasticChoice=True)
-	gru.generate(modelPath,30,30,stochasticChoice=False)
+	gru.generate(dataset.Model, 30, 30, stochasticChoice=True)
+	gru.generate(dataset.Model, 30, 30, stochasticChoice=False)
 
 if __name__ == "__main__":
 	main()

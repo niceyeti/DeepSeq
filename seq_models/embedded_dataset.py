@@ -55,6 +55,7 @@ class EmbeddedDataset(object):
 		self._zero_vector_in = np.zeros(self.Model.layer1_size, dtype=NUMPY_DEFAULT_DTYPE) #vectors are stored by word2vec as (k,) size numpy arrays
 		print("Built embedded dataset. Training file will be repeated, once examples are exhausted.")
 		print("Consider passing useL2Norm to observe the effect of normalizing term vectors.")
+		print("WARNING: not yet handling out-of-model terms!!! See @truncations in _getTrainingSequence")
 		self.IgnoreIndex = IGNORE_INDEX
 
 	def _getLine(self):
@@ -76,8 +77,6 @@ class EmbeddedDataset(object):
 	"""
 	def getNextBatch(self):
 		batch = []
-
-		print("WARNING: not yet handling out-of-model terms!!! See @truncations")
 
 		while len(batch) < self._batchSize:
 			trainingSeq = self._getTrainingSequence()
@@ -135,10 +134,10 @@ class EmbeddedDataset(object):
 		"""
 		The ugliest function, required by torch sequential batch-training models.
 		"""
-		print(str(batch))
-		print("BATCH SHAPE: {}".format(batch[0][0].shape))
+		#print("BATCH: "+str(batch))
+		#print("BATCH SHAPE: {}".format(batch[0][0][0].shape))
 		batches = []
-		xdim = batch[0][0].shape[0]
+		xdim = batch[0][0][0].shape[0]
 
 		#convert to tensor data
 		maxLength = max(len(seq) for seq in batch)
@@ -152,45 +151,4 @@ class EmbeddedDataset(object):
 				batchY[i,j] = torch.tensor(y).to(TORCH_DTYPE)
 
 		return batchX, batchY
-
-		"""
-		print("X batch instance size (@batchSize x maxLength x xdim): {}".format(batches[0][0].size()))
-		print("Y batch instance size (@batchSize x maxLength): {}".format(batches[0][1].size()))
-		print("Ignore index (grads for these won't backprop): {}".format(ignore_index))
-
-		return batches
-		"""
-
-	"""
-	OBSOLETE
-	Builds a sequential training dataset of word embeddings. Note that this could just implement a generator, rather
-	than building a giant dataset in memory: the model contains all the vectors for the training sequences, so just
-	iterate the training sequences, generating their corresponding vectors. 
-
-	NOTE: If any term in @trainingText is not in the word2vec model, that training sequence is truncated at that word
-	TODO: Instead of truncation, set unknown term to IGNORE_INDEX
-
-	@trainTextPath: A file containing word sequences, one training sequence per line. The terms in this file must exactly match those
-	used to train the word-embedding model. This is very important, since it means that both the model and the training sequences
-	must have been derived from the same text normalization methods and so on.
-	@wordModelPath: Path to a word2vec model for translating terms into fixed-length input vectors.
-	@ignore_index: A flag value for output that should be ignored. See pytorch docs.
-
-	Returns: Data as a list of sequences, each sequence a list of numpy one-hot encoded vectors indicating characters
-	def loadEmbeddedDataset(limit=1000, maxSeqLen=1000000, minSeqLength=5, ignoreIndex=IGNORE_INDEX):
-		if not os.path.exists(trainTextPath):
-			print("ERROR training text path not found: "+trainTextPath)
-			exit()
-		if not os.path.exists(wordModelPath):
-			print("ERROR word model path not found: "+wordModelPath)
-			exit()
-
-		#model = gensim.models.Word2Vec.load(wordModelPath)
-		dataset = None
-		trainFile = open(trainTextPath, "r")
-		dataset = GetEmbeddedTrainingSequences(trainFile, model, minLength=minSeqLength, ignore_index=ignoreIndex)
-
-		return dataset, model
-	"""
-
 
