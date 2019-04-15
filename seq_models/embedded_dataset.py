@@ -118,7 +118,7 @@ class EmbeddedDataset(object):
 				retries += 1
 
 		if not success and retries >= maxRetries:
-			print("WARNING maxRetires reached in dataset._getTrainingSequence")
+			print("WARNING maxRetries reached in dataset._getTrainingSequence")
 			trainingSeq = None
 
 		return trainingSeq
