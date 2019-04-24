@@ -86,19 +86,21 @@ def main():
 		if "--rnn" in arg.lower() or "--usernn" in arg.lower():
 			useRNN = True
 	
-	trainPath = "../data/treasureIsland_normalized.txt"
-	modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
-
+	#trainPath = "../data/treasureIsland_normalized.txt"
+	#modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
+	trainPath = "../data/wapo.txt"
+	modelPath = "../../VecSent/models/big_model.d2v"
 	ignoreIndex = -1
 
 	dataset = EmbeddedDataset( \
 		trainPath, \
 		modelPath, \
 		batchSize = 3, \
+		batchCacheSize = 100, \
 		torchDtype = TORCH_DTYPE, \
 		limit = -1, \
 		maxSeqLength = 200, \
-		minSeqLength = 10, \
+		minSeqLength = 5, \
 		useL2Norm = False)
 
 	useRNN = False

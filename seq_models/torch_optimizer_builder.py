@@ -4,6 +4,11 @@ gradient based methods. This was factored out since it can be used by many diffe
 of each one implementing its own. Could be just a singleton or static class.
 
 This isn't well-factored and isn't production code; just needed a quick builder class.
+
+
+IF YOU HAVE BALLPARK OBSERVATIONS ABOUT OPTIMIZER EFFECTIVENESS, PLEASE LEAVE NOTES!!!
+
+
 """
 
 import torch.optim

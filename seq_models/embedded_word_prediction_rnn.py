@@ -144,7 +144,7 @@ class EmbeddedGRU(torch.nn.Module):
 		entry is 1.0, and all others zero. However you can instead not one-hot the vector, leaving other noise
 		in the vector. No idea what this will do, its just interesting to leave in.
 		"""
-		print("Generating {} sequences with stochasticChoice={}".format(numSeqs,stochasticChoice))
+		print("\n###################### Generating {} sequences with stochasticChoice={} #######################".format(numSeqs,stochasticChoice))
 
 		for _ in range(numSeqs):
 			#reset network

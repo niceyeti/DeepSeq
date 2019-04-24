@@ -33,6 +33,8 @@ class EmbeddedDataset(object):
 			trainPath, 						\
 			modelPath,						\
 			batchSize=3,					\
+			#The number of batches to read-ahead and store
+			batchCacheSize=100,				\
 			torchDtype=TORCH_DTYPE,			\
 			limit = -1,						\
 			maxSeqLength = -1,				\
@@ -49,6 +51,8 @@ class EmbeddedDataset(object):
 		self._limit = limit
 		self._minSeqLength = minSeqLength
 		self._batchSize = batchSize
+		self._batchCacheSize = batchCacheSize
+		self._batchCache = []
 		self._trainFile = open(trainPath, "r")
 		self.Model = vector_models.loadModel(modelPath)
 		#may not belong here, but works better instead of building these every time we read a training sample
@@ -76,8 +80,18 @@ class EmbeddedDataset(object):
 	Each training sequence is a sequence of tuples of this type, k \in R --> i \in Z+
 	"""
 	def getNextBatch(self):
-		batch = []
+		if len(self._batchCache) == 0:
+			self._readAhead(self._batchCacheSize)
+		return self._batchCache.pop()
 
+	def _readAhead(self, n):
+		#Reads @n batches into memory ahead of time. Not really much more than a cosmetic cache strategy as yet, since this the read cost is the same as reading one at a time.
+		#But you could re-train on the same batches a few time, if of sufficient size, at least in early, steeper-gradient training phases.
+		#@n: The number of batches to read-ahead
+		self._batchCache = [self._getNextBatch() for i in range(n)]
+
+	def _getNextBatch(self):
+		batch = []
 		while len(batch) < self._batchSize:
 			trainingSeq = self._getTrainingSequence()
 			if trainingSeq is not None:
