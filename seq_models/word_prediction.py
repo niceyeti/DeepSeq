@@ -95,8 +95,8 @@ def main():
 	dataset = EmbeddedDataset( \
 		trainPath, \
 		modelPath, \
-		batchSize = 3, \
-		batchCacheSize = 100, \
+		batchSize = 30, \
+		batchCacheSize = 200, \
 		torchDtype = TORCH_DTYPE, \
 		limit = -1, \
 		maxSeqLength = 200, \

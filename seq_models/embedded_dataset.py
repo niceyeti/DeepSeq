@@ -161,6 +161,8 @@ class EmbeddedDataset(object):
 
 		for i, seq in enumerate(batch):
 			for j, (x, y) in enumerate(seq):
+				#batchX[i,j,:] = x.clone().detach().to(TORCH_DTYPE)
+				#batchY[i,j] = y.clone().detach().to(TORCH_DTYPE)
 				batchX[i,j,:] = torch.tensor(x).to(TORCH_DTYPE)
 				batchY[i,j] = torch.tensor(y).to(TORCH_DTYPE)
 
