@@ -11,6 +11,13 @@ Sample output:
 
 """
 
+
+#serialization. TODO: Remove these and serialization to separate file/class
+import json
+import base64
+import os
+
+
 import torch
 import random
 import matplotlib.pyplot as plt
@@ -31,18 +38,26 @@ A GRU cell with softmax output off the hidden state; word-embedding input/output
 class EmbeddedGRU(torch.nn.Module):
 	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst=True, clip=-1, useRNN=False):
 		super(EmbeddedGRU, self).__init__()
-		
+		self._init(xdim, hdim, ydim, numHiddenLayer, batchFirst, clip, useRNN)
+
+	def _initialize(self, xdim, hdim, ydim, numHiddenLayers, batchFirst=True, clip=-1, useRNN=False):
+		"""
+		This is here instead of in the ctor because I want a single point for initialization,
+		for both construction and deserialization of an existing model.
+		"""
 		self._optimizerBuilder = OptimizerFactory()
 		self._batchFirst = batchFirst
 		self.xdim = xdim
 		self.hdim = hdim
 		self.ydim = ydim
 		self.numHiddenLayers = numHiddenLayers
-		#build the network architecture
+		#build the network models
 		if not useRNN:
 			self.rnn = torch.nn.GRU(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
+			self.modelType = "gru"
 		else:
 			self.rnn = torch.nn.RNN(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
+			self.modelType = "rnn"
 		self.linear = torch.nn.Linear(hdim, ydim)
 		#LogSoftmax @dim refers to the dimension along which LogSoftmax (a function, not a layer) will apply softmax.
 		# dim=2, since the output of the network is size (batchSize x seqLen x ydim) and we want to calculate softmax at each output, hence dimension 2.
@@ -250,7 +265,7 @@ class EmbeddedGRU(torch.nn.Module):
 					avgLoss = sum(losses[epoch-k:]) / float(k)
 					print(epoch, avgLoss)
 					if nanDetected:
-						print("Nan loss detected; suggest mitigating with shorter training regimes (shorter sequences) or gradient clipping")					
+						print("Nan loss detected; suggest mitigating with shorter training regimes (shorter sequences) or gradient clipping")	
 				#print(loss)
 				# Zero gradients, perform a backward pass, and update the weights.
 				optimizer.zero_grad()
@@ -275,4 +290,77 @@ class EmbeddedGRU(torch.nn.Module):
 		plt.plot(xs,avgLosses)
 		plt.show()
 
+	################### Serialization. This could be removed to its own class if desired ###########################
+	def Save(self):
+		modelFolder = "./rnn_models"
+		if input("Save model? ").lower() in ["y","yes"]:
+			path = input("Enter model name for rnn_models/ folder: ")
+			if not path.endswith(".json"):
+				path += ".json"
+			self._save(path)
+
+	def Read(self):
+		models = [(str(i), model) for i, model in enumerate(os.listdir("./rnn_models"))]
+		for i, model in models:
+			print("\t{}: {}".format(i, model))
+		done = False
+		while not done:
+			modelNum = input("Enter number of model to select: ").lower()
+			done = modelNum in [i for i, model in models]
+			if not done:
+				print("Re-enter")
+		return self._read(models[ int(modelNum) ][1] )
+
+	#WARNING/TODO: These two invertible functions are very lazy/unsafe, for local serialization only (e.g., no guarantees it can be transferred or loaded on another machine/architecture)
+	def _serializeObject(self, obj):
+		pickled = pickle.dumps(obj)
+		return base64.b64encode(pickled)
+	def _deserializeObject(self, s):
+		pickled = base64.b64decode(s)
+		return pickle.loads(pickled, encoding="ASCII")
+
+	def _read(self, ipath):
+		with open(ipath, "rb") as ifile:
+			asDict = json.reads(ifile)
+			return self._fromDict(asDict)
+		return None
+
+	def _save(self, opath):
+		"""
+		Saves entire GRU/RNN object to a json file with pickled+base64 encoded torch components
+		"""
+		with open(opath, "wb+") as ofile:
+			asDict = self._toDict()
+			asJson = json.dumps(asDict, sort_keys=True, indent=4)
+			ofile.write(asJson+"\n")
+			print("Model saved as json to "+opath)
+
+	def _fromDict(self, d):
+		self._batchFirst = d["batchFirst"]
+		self.xdim = d["xdim"]
+		self.hdim = d["hdim"]
+		self.ydim = d["ydim"]
+		self.numHiddenLayers = d["numHiddenLayers"]
+		self.modelType = d["modelType"]
+		self._clip = d["clip"]
+		self.rnn = self._deserializeObject(d["rnn"])
+		self.linear = self._deserializeObject(d["linear"])
+		self.logSoftmax = torch.nn.LogSoftmax(dim=2)
+		if d["torchDtype"] != str(TORCH_DTYPE):
+			print("WARNING: read dict with torchDtype={} but local dtype is {}".format(d["torchDtype"],str(TORCH_DTYPE)))
+
+	def _toDict(self):
+		#Returns ascii-serializable dict
+		return {														\
+			"batchFirst": self._batchFirst, 							\
+			"xdim" : self.xdim, 										\
+			"hdim" : self.hdim, 										\
+			"ydim" : self.ydim, 										\
+			"numHiddenLayers" : self.numHiddenLayers,					\
+			"modelType" : self.modelType, 								\
+			"clip" : self._clip, 										\
+			"rnn":    self._serializeObject(self.rnn.state_dict()),		\
+			"linear": self._serializeObject(self.linear.state_dict()),	\
+			"torchDtype": str(TORCH_DTYPE)								\
+		}
 
