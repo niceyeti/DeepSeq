@@ -16,6 +16,7 @@ Sample output:
 import json
 import base64
 import os
+import pickle
 
 
 import torch
@@ -38,7 +39,7 @@ A GRU cell with softmax output off the hidden state; word-embedding input/output
 class EmbeddedGRU(torch.nn.Module):
 	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst=True, clip=-1, useRNN=False):
 		super(EmbeddedGRU, self).__init__()
-		self._init(xdim, hdim, ydim, numHiddenLayer, batchFirst, clip, useRNN)
+		self._initialize(xdim, hdim, ydim, numHiddenLayers, batchFirst, clip, useRNN)
 
 	def _initialize(self, xdim, hdim, ydim, numHiddenLayers, batchFirst=True, clip=-1, useRNN=False):
 		"""
@@ -67,6 +68,10 @@ class EmbeddedGRU(torch.nn.Module):
 			self._clip = 1
 		else:
 			self._clip = -1
+
+		#print("State dict: "+str(self.state_dict()))
+		self.Save()
+		self.Read()
 
 	def _initWeights(self, initRange=1.0):
 		for gruWeights in self.rnn.all_weights:
@@ -292,15 +297,14 @@ class EmbeddedGRU(torch.nn.Module):
 
 	################### Serialization. This could be removed to its own class if desired ###########################
 	def Save(self):
-		modelFolder = "./rnn_models"
-		if input("Save model? ").lower() in ["y","yes"]:
+		modelFolder = "./rnn_models/"
+		if input("Save model? (Enter y/n) ").lower() in ["y","yes"]:
 			path = input("Enter model name for rnn_models/ folder: ")
-			if not path.endswith(".json"):
-				path += ".json"
-			self._save(path)
+			self._save(modelFolder+path)
 
 	def Read(self):
-		models = [(str(i), model) for i, model in enumerate(os.listdir("./rnn_models"))]
+		modelDir = "./rnn_models/"
+		models = [(str(i), modelDir+model) for i, model in enumerate(os.listdir(modelDir))]
 		for i, model in models:
 			print("\t{}: {}".format(i, model))
 		done = False
@@ -314,14 +318,14 @@ class EmbeddedGRU(torch.nn.Module):
 	#WARNING/TODO: These two invertible functions are very lazy/unsafe, for local serialization only (e.g., no guarantees it can be transferred or loaded on another machine/architecture)
 	def _serializeObject(self, obj):
 		pickled = pickle.dumps(obj)
-		return base64.b64encode(pickled)
+		return base64.b64encode(pickled).decode("utf-8")
 	def _deserializeObject(self, s):
 		pickled = base64.b64decode(s)
-		return pickle.loads(pickled, encoding="ASCII")
+		return pickle.loads(pickled)
 
 	def _read(self, ipath):
-		with open(ipath, "rb") as ifile:
-			asDict = json.reads(ifile)
+		with open(ipath, "r") as ifile:
+			asDict = json.load(ifile)
 			return self._fromDict(asDict)
 		return None
 
@@ -329,9 +333,14 @@ class EmbeddedGRU(torch.nn.Module):
 		"""
 		Saves entire GRU/RNN object to a json file with pickled+base64 encoded torch components
 		"""
-		with open(opath, "wb+") as ofile:
+		if not opath.endswith(".json"):
+			opath += ".json"
+		print("Saving model to {} ...".format(opath))
+		with open(opath, "w+") as ofile:
 			asDict = self._toDict()
+			#print("DICT: \n"+str(asDict))
 			asJson = json.dumps(asDict, sort_keys=True, indent=4)
+			#print("\n\nJSON: "+asJson)
 			ofile.write(asJson+"\n")
 			print("Model saved as json to "+opath)
 
@@ -359,8 +368,8 @@ class EmbeddedGRU(torch.nn.Module):
 			"numHiddenLayers" : self.numHiddenLayers,					\
 			"modelType" : self.modelType, 								\
 			"clip" : self._clip, 										\
-			"rnn":    self._serializeObject(self.rnn.state_dict()),		\
-			"linear": self._serializeObject(self.linear.state_dict()),	\
+			"rnn":    self._serializeObject(self.rnn),		\
+			"linear": self._serializeObject(self.linear),	\
 			"torchDtype": str(TORCH_DTYPE)								\
 		}
 
