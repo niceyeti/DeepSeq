@@ -150,15 +150,75 @@ class EmbeddedGRU(torch.nn.Module):
 
 		return maxIndex
 
+	def beamGenerate(self, vecModel, k=1, beamWidth=1, depth=1, numSeqs=1, seqLen=20):
+		"""
+		Inference procedure for generating language using a basic bfs beam search: At each node, expand and take its top k children,
+		ranked by probability. No fancy value estimation of node value allowed in this method (e.g., SEARN'ing).
+		In this algorithm, the beam is reset at each layer of the search tree:
+			children = getChildren(beam, k) #expand all children and take their k-max children (the maxes are scoped to each parent node)
+			beam = sorted(children)[:beamWidth]
+
+
+
+		TODO: DFS and other forms of beam search... can't remember Jana's thesis...
+		TODO: Is there a form of Viterbi if the network if bidirectional?
+		"""
+		print("\n###################### Generating {} sequences with stochasticChoice={} #######################".format(numSeqs,stochasticChoice))
+
+		for _ in range(numSeqs):
+			#reset network
+			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=False)
+			x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
+			maxIndex = random.randint(0,self.xdim-1)
+			lastIndex = maxIndex
+			word = vecModel.wv.index2entity[maxIndex]
+			x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
+			seq = word
+			for _ in range(seqLen):
+				
+
+				#getChildren(beam, k)
+				children = []
+				for parent in beam:							
+					#@o_t output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
+					#In this special case, @hidden and z_t are the same, since only one-step of prediction has been performed
+					o_t, z_t, discarded_hidden = self(x_t, hidden, verbose=False)
+					maxIndices = self.sampleMaxIndices(o_t[-1][-1], k)
+					#Should hidden state also 
+					children += [Node(Parent=node, Index=tup[0], LogProb=tup[1]+parent.LogProb) for tup in maxIndices]
+				#reset beam to top @beamWidth candidate nodes
+				beam = sorted(children, key=lamdba node: node.LogProb, reverse=True)[:beamWidth]
+
+					word = vecModel.wv.index2entity[maxIndex]
+					seq += (" " + word)
+					#TODO: probly a faster way than this to get word vector from word index
+					x_t.zero_()
+					x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
+
+			print(seq+"<")
+
+	def sampleMaxIndices(self, v, k):
+		"""
+		Returns k-max indices of (1 x n) tensor @v, returning these as a list of tuples: (index, log-prob).
+		TODO: Optimize system-memory complexity of this function to reduce array creations/copies. Also minimize log-prob calcs;
+		can sort on the k-maxes, then apply logs to these once found, instead of log'ing the whole tensor (if it isn't already in log space).
+		TODO: numpy() call will cost dearly at this level, since this runs in inner loops.
+		TODO: For k <= 3, this could be an inline function with O(3n) complexity: get max 3 times. But in fact,
+		getting the top 3 can be reduced to O(1.5n), by inheriting info of the top two comparisons.
+		"""
+		#TODO: Can't remember if the outputs are already log probs or not...
+		return np.argpartition(v.numpy(), k)
+
 	def generate(self, vecModel, numSeqs=1, seqLen=50, stochasticChoice=False, allowRecurrentNoise=False):
 		"""
+		Generates one word at a time, via a simple max procedure. Ergo, this is bigram generation.
 		@reverseEncoding: A gensim word2vec model for converting output probabilities and their indices back into words.
 		@numSeqs: Number of sequences to generate
 		@seqLen: The length of each generated sequence, before stopping generation
 		@stochasticChoice: If True, then next character is sampled according to the softmax distribution
-					over output words, as opposed to selecting the maximum probability prediction. Note for large models, this
-					likely won't work very well, since the portion of probability assigned to terms is likely very small even
-					for the max term.
+			over output words, as opposed to selecting the maximum probability prediction. Note for large models, this
+			likely won't work very well, since the portion of probability assigned to terms is likely very small even
+			for the max term.
 		@allowRecurrentNoise: Just an interesting parameter to observe: during generation, the output y'
 		becomes the input to the next stage, and canonically should be one-hotted such that only the max
 		entry is 1.0, and all others zero. However you can instead not one-hot the vector, leaving other noise
@@ -286,7 +346,7 @@ class EmbeddedGRU(torch.nn.Module):
 					optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=torchEta*0.1, momentum=momentum, optimizer=optimizerStr)
 	
 		except (KeyboardInterrupt):
-			pass
+			self.Save()
 
 		#plot the losses
 		k = 20
@@ -299,7 +359,7 @@ class EmbeddedGRU(torch.nn.Module):
 	def Save(self):
 		modelFolder = "./rnn_models/"
 		if input("Save model? (Enter y/n) ").lower() in ["y","yes"]:
-			path = input("Enter model name for rnn_models/ folder: ")
+			path = input("Enter model name for "+modelFolder+" folder: ")
 			self._save(modelFolder+path)
 
 	def Read(self):
