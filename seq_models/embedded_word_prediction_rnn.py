@@ -179,7 +179,7 @@ class EmbeddedGRU(torch.nn.Module):
 
 				#getChildren(beam, k)
 				children = []
-				for parent in beam:							
+				for parent in beam:					
 					#@o_t output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
 					#In this special case, @hidden and z_t are the same, since only one-step of prediction has been performed
 					o_t, z_t, discarded_hidden = self(x_t, hidden, verbose=False)
@@ -189,13 +189,24 @@ class EmbeddedGRU(torch.nn.Module):
 				#reset beam to top @beamWidth candidate nodes
 				beam = sorted(children, key=lamdba node: node.LogProb, reverse=True)[:beamWidth]
 
-					word = vecModel.wv.index2entity[maxIndex]
-					seq += (" " + word)
-					#TODO: probly a faster way than this to get word vector from word index
-					x_t.zero_()
-					x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
+			#backtrack()
+			#backtrack from all beam nodes to get full sequences
+			sequences = [] # store sequences as tuples: (log-prob, [a,b,c...]) but sequence is reversed
+			for node in beam:
+				prob = node.LogProb
+				sequence = []
+				parent = node
+				while parent != None:
+					w = vecModel.wv.index2entity[ parent.Index ]
+					sequence += w
+					parent = parent.Parent
+				sequences += (prob, [w for w in reverse(sequence)])
 
-			print(seq+"<")
+			print("Top sequences ranked by log-prob")
+			for seq in sequences:
+				print("{} {}".format(seq[0], " ".join(seq[1])))
+
+			return sequences
 
 	def sampleMaxIndices(self, v, k):
 		"""
