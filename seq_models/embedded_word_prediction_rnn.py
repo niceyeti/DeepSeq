@@ -165,24 +165,37 @@ class EmbeddedGRU(torch.nn.Module):
 		"""
 		print("\n###################### Generating {} sequences with stochasticChoice={} #######################".format(numSeqs,stochasticChoice))
 
+		x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
+
 		for _ in range(numSeqs):
 			#reset network
 			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=False)
-			x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
 			maxIndex = random.randint(0,self.xdim-1)
 			lastIndex = maxIndex
 			word = vecModel.wv.index2entity[maxIndex]
 			x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
 			seq = word
-			for _ in range(seqLen):
-				
 
+
+
+			#initialize random hidden state, then init beam
+			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=False)
+			x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
+			o_t, z_t, discarded_hidden = self(x_t, hidden, verbose=False)
+			maxIndex = self.sampleMaxIndex(o_t[-1][-1], stochasticChoice=False)
+			#just start with the max prob first term, so a beam of one node
+			beam = [ Node(Parent=None, Index=maxIndex, LogProb=o_t[-1][-1][not sure how to get max prob from output, or if it is already a log prob]) ]
+
+
+			for _ in range(seqLen):
 				#getChildren(beam, k)
 				children = []
-				for parent in beam:					
+				for parent in beam:
+					word = vecModel.wv.index2entity[ parent.Index ]
+					x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)					
 					#@o_t output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
 					#In this special case, @hidden and z_t are the same, since only one-step of prediction has been performed
-					o_t, z_t, discarded_hidden = self(x_t, hidden, verbose=False)
+					o_t, z_t, discarded_hidden = self(x_t, parent.hidden, verbose=False)
 					maxIndices = self.sampleMaxIndices(o_t[-1][-1], k)
 					#Should hidden state also 
 					children += [Node(Parent=node, Index=tup[0], LogProb=tup[1]+parent.LogProb) for tup in maxIndices]
