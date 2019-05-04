@@ -120,8 +120,12 @@ def main():
 	print("Training...")
 
 	gru.train(dataset, epochs=maxEpochs, torchEta=eta, momentum=momentum)
-	gru.generate(dataset.Model, 30, 30, stochasticChoice=True)
-	gru.generate(dataset.Model, 30, 30, stochasticChoice=False)
+	gru.Save()
+	gru.Read()
+
+	gru.beamGenerate(dataset.Model, k=1, beamWidth=1, depth=1, numSeqs=1, seqLen=5)
+	#gru.generate(dataset.Model, 30, 30, stochasticChoice=True)
+	#gru.generate(dataset.Model, 30, 30, stochasticChoice=False)
 
 if __name__ == "__main__":
 	main()

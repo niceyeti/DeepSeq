@@ -11,7 +11,6 @@ Sample output:
 
 """
 
-
 #serialization. TODO: Remove these and serialization to separate file/class
 import json
 import base64
@@ -29,6 +28,13 @@ TORCH_DTYPE=torch.float32
 torch.set_default_dtype(TORCH_DTYPE)
 
 VERBOSE = False
+
+#TODO: Remove this to separate generation component. It is used for beam search based inference.
+class Node(object):
+	def __init__(self):
+		Parent=None
+		Index = -1
+		LogProb = 1.0
 
 """
 A GRU cell with softmax output off the hidden state; word-embedding input/output, for some word prediction sandboxing.
@@ -53,12 +59,13 @@ class EmbeddedGRU(torch.nn.Module):
 		self.ydim = ydim
 		self.numHiddenLayers = numHiddenLayers
 		#build the network models
-		if not useRNN:
-			self.rnn = torch.nn.GRU(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
-			self.modelType = "gru"
-		else:
+		if useRNN:
 			self.rnn = torch.nn.RNN(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
 			self.modelType = "rnn"
+		else:
+			self.rnn = torch.nn.GRU(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
+			self.modelType = "gru"
+
 		self.linear = torch.nn.Linear(hdim, ydim)
 		#LogSoftmax @dim refers to the dimension along which LogSoftmax (a function, not a layer) will apply softmax.
 		# dim=2, since the output of the network is size (batchSize x seqLen x ydim) and we want to calculate softmax at each output, hence dimension 2.
@@ -70,7 +77,7 @@ class EmbeddedGRU(torch.nn.Module):
 			self._clip = -1
 
 		#print("State dict: "+str(self.state_dict()))
-		self.Save()
+		#self.Save()
 		self.Read()
 
 	def _initWeights(self, initRange=1.0):
@@ -158,16 +165,15 @@ class EmbeddedGRU(torch.nn.Module):
 			children = getChildren(beam, k) #expand all children and take their k-max children (the maxes are scoped to each parent node)
 			beam = sorted(children)[:beamWidth]
 
-
-
 		TODO: DFS and other forms of beam search... can't remember Jana's thesis...
 		TODO: Is there a form of Viterbi if the network if bidirectional?
 		"""
-		print("\n###################### Generating {} sequences with stochasticChoice={} #######################".format(numSeqs,stochasticChoice))
+		print("\n############### Generating {} sequences with beam search k={} beamWidth={} depth={} seqLen={} ###############".format(numSeqs,k,beamWidth,depth,seqLen))
 
-		x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
+		#x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
 
 		for _ in range(numSeqs):
+			"""
 			#reset network
 			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=False)
 			maxIndex = random.randint(0,self.xdim-1)
@@ -175,20 +181,17 @@ class EmbeddedGRU(torch.nn.Module):
 			word = vecModel.wv.index2entity[maxIndex]
 			x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
 			seq = word
-
-
-
+			"""
 			#initialize random hidden state, then init beam
-			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=False)
+			hidden = self.initRandHidden(1, self.numHiddenLayers, requiresGrad=False)
 			x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
 			o_t, z_t, discarded_hidden = self(x_t, hidden, verbose=False)
 			maxIndex = self.sampleMaxIndex(o_t[-1][-1], stochasticChoice=False)
 			#just start with the max prob first term, so a beam of one node
-			beam = [ Node(Parent=None, Index=maxIndex, LogProb=o_t[-1][-1][not sure how to get max prob from output, or if it is already a log prob]) ]
-
+			beam = [ Node(Parent=None, Index=maxIndex, LogProb=o_t[-1][-1][maxIndex]) ]
 
 			for _ in range(seqLen):
-				#getChildren(beam, k)
+				#def getChildren(beam, k)
 				children = []
 				for parent in beam:
 					word = vecModel.wv.index2entity[ parent.Index ]
@@ -200,7 +203,7 @@ class EmbeddedGRU(torch.nn.Module):
 					#Should hidden state also 
 					children += [Node(Parent=node, Index=tup[0], LogProb=tup[1]+parent.LogProb) for tup in maxIndices]
 				#reset beam to top @beamWidth candidate nodes
-				beam = sorted(children, key=lamdba node: node.LogProb, reverse=True)[:beamWidth]
+				beam = sorted(children, key=lambda node: node.LogProb, reverse=True)[:beamWidth]
 
 			#backtrack()
 			#backtrack from all beam nodes to get full sequences
@@ -387,8 +390,14 @@ class EmbeddedGRU(torch.nn.Module):
 			self._save(modelFolder+path)
 
 	def Read(self):
+		if input("Read existing model? (Enter y/n) ").lower() in ["n","no"]:
+			return
+
 		modelDir = "./rnn_models/"
-		models = [(str(i), modelDir+model) for i, model in enumerate(os.listdir(modelDir))]
+		models = [(str(i), modelDir+model) for i, model in enumerate(os.listdir(modelDir)) if ".json" in model]
+		if len(models) == 0:
+			print("No models in "+modelDir)
+			return
 		for i, model in models:
 			print("\t{}: {}".format(i, model))
 		done = False
@@ -397,7 +406,7 @@ class EmbeddedGRU(torch.nn.Module):
 			done = modelNum in [i for i, model in models]
 			if not done:
 				print("Re-enter")
-		return self._read(models[ int(modelNum) ][1] )
+		self._read(models[ int(modelNum) ][1] )
 
 	#WARNING/TODO: These two invertible functions are very lazy/unsafe, for local serialization only (e.g., no guarantees it can be transferred or loaded on another machine/architecture)
 	def _serializeObject(self, obj):
@@ -410,8 +419,7 @@ class EmbeddedGRU(torch.nn.Module):
 	def _read(self, ipath):
 		with open(ipath, "r") as ifile:
 			asDict = json.load(ifile)
-			return self._fromDict(asDict)
-		return None
+			self._fromDict(asDict)
 
 	def _save(self, opath):
 		"""
