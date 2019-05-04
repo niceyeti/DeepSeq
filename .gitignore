@@ -2,4 +2,4 @@ __pycache__*
 *pyc
 seq_models/language_util
 data
-
+seq_models/rnn_models

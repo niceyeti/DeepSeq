@@ -119,9 +119,9 @@ def main():
 		useRNN=useRNN)
 	print("Training...")
 
-	gru.train(dataset, epochs=maxEpochs, torchEta=eta, momentum=momentum)
-	gru.Save()
-	gru.Read()
+	#gru.train(dataset, epochs=maxEpochs, torchEta=eta, momentum=momentum)
+	#gru.Save()
+	#gru.Read()
 
 	gru.beamGenerate(dataset.Model, k=1, beamWidth=1, depth=1, numSeqs=1, seqLen=5)
 	#gru.generate(dataset.Model, 30, 30, stochasticChoice=True)

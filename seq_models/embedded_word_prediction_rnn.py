@@ -17,7 +17,7 @@ import base64
 import os
 import pickle
 
-
+import numpy as np
 import torch
 import random
 import matplotlib.pyplot as plt
@@ -31,10 +31,19 @@ VERBOSE = False
 
 #TODO: Remove this to separate generation component. It is used for beam search based inference.
 class Node(object):
-	def __init__(self):
-		Parent=None
-		Index = -1
-		LogProb = 1.0
+	def __init__(self, parent=None, index=-1, logProb=1.0, hidden=None):
+		"""
+		@parent: The backlink to a predecessor state in the network
+		@index: The term index of this state. This is the word-identity in a word2vec model.
+		@logProb: The accumulated log-probability up to this node
+		@hidden: The hidden vector output at the same time step as this word output. Note this doesn't
+		correspond to this word, but to the timestep, since the hidden state does not depend on this term. Storing
+		the hidden state allows resetting the network to this state to continue searching from this node.
+		"""
+		self.Parent=parent
+		self.Index = index
+		self.LogProb = logProb
+		self.Hidden = hidden
 
 """
 A GRU cell with softmax output off the hidden state; word-embedding input/output, for some word prediction sandboxing.
@@ -188,7 +197,7 @@ class EmbeddedGRU(torch.nn.Module):
 			o_t, z_t, discarded_hidden = self(x_t, hidden, verbose=False)
 			maxIndex = self.sampleMaxIndex(o_t[-1][-1], stochasticChoice=False)
 			#just start with the max prob first term, so a beam of one node
-			beam = [ Node(Parent=None, Index=maxIndex, LogProb=o_t[-1][-1][maxIndex]) ]
+			beam = [ Node(parent=None, index=maxIndex, logProb=o_t[-1][-1][maxIndex]) ]
 
 			for _ in range(seqLen):
 				#def getChildren(beam, k)
@@ -198,10 +207,9 @@ class EmbeddedGRU(torch.nn.Module):
 					x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)					
 					#@o_t output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
 					#In this special case, @hidden and z_t are the same, since only one-step of prediction has been performed
-					o_t, z_t, discarded_hidden = self(x_t, parent.hidden, verbose=False)
+					o_t, z_t, hidden = self(x_t, parent.Hidden, verbose=False)
 					maxIndices = self.sampleMaxIndices(o_t[-1][-1], k)
-					#Should hidden state also 
-					children += [Node(Parent=node, Index=tup[0], LogProb=tup[1]+parent.LogProb) for tup in maxIndices]
+					children += [ Node(parent=parent, index=tup[0], logProb=tup[1]+parent.LogProb, hidden=hidden) for tup in maxIndices]
 				#reset beam to top @beamWidth candidate nodes
 				beam = sorted(children, key=lambda node: node.LogProb, reverse=True)[:beamWidth]
 
@@ -210,13 +218,16 @@ class EmbeddedGRU(torch.nn.Module):
 			sequences = [] # store sequences as tuples: (log-prob, [a,b,c...]) but sequence is reversed
 			for node in beam:
 				prob = node.LogProb
+				print("Prob: {}".format(prob))
 				sequence = []
 				parent = node
 				while parent != None:
 					w = vecModel.wv.index2entity[ parent.Index ]
-					sequence += w
+					print("Word: {}".format(w))
+					sequence.append(w)
 					parent = parent.Parent
-				sequences += (prob, [w for w in reverse(sequence)])
+				print("Sequence: {}".format(sequence))
+				sequences.append( (prob, [w for w in reversed(sequence)]) )
 
 			print("Top sequences ranked by log-prob")
 			for seq in sequences:
@@ -227,14 +238,19 @@ class EmbeddedGRU(torch.nn.Module):
 	def sampleMaxIndices(self, v, k):
 		"""
 		Returns k-max indices of (1 x n) tensor @v, returning these as a list of tuples: (index, log-prob).
-		TODO: Optimize system-memory complexity of this function to reduce array creations/copies. Also minimize log-prob calcs;
+		NOTE: The returned list of tuples is NOT ordered. This is because argpartition does NOT returned ordered
+		max indices, otherwise it wouldn't be O(n).
+
+		TODO: Consider optimizing system-memory complexity of this function to reduce array creations/copies. Also minimize log-prob calcs;
 		can sort on the k-maxes, then apply logs to these once found, instead of log'ing the whole tensor (if it isn't already in log space).
-		TODO: numpy() call will cost dearly at this level, since this runs in inner loops.
+		TODO: numpy() call will cost significantly at this level, since this runs in inner loops.
 		TODO: For k <= 3, this could be an inline function with O(3n) complexity: get max 3 times. But in fact,
 		getting the top 3 can be reduced to O(1.5n), by inheriting info of the top two comparisons.
 		"""
-		#TODO: Can't remember if the outputs are already log probs or not...
-		return np.argpartition(v.numpy(), k)
+		asArray = v.detach().numpy()
+		maxIndices = np.argpartition(asArray, k)[0:k]
+		unorderedValues = asArray[maxIndices]
+		return [ (maxIndices[i], unorderedValues[i]) for i in range(maxIndices.size) ]
 
 	def generate(self, vecModel, numSeqs=1, seqLen=50, stochasticChoice=False, allowRecurrentNoise=False):
 		"""
@@ -396,7 +412,7 @@ class EmbeddedGRU(torch.nn.Module):
 		modelDir = "./rnn_models/"
 		models = [(str(i), modelDir+model) for i, model in enumerate(os.listdir(modelDir)) if ".json" in model]
 		if len(models) == 0:
-			print("No models in "+modelDir)
+			print("No models in "+modelDir+", nothing to read")
 			return
 		for i, model in models:
 			print("\t{}: {}".format(i, model))
