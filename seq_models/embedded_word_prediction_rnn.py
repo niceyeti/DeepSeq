@@ -116,14 +116,14 @@ class EmbeddedGRU(torch.nn.Module):
 	@batchFirst: Determines if batchSize comes before or after numHiddenLayers in tensor dimension
 	Returns @batchSize copies of the zero vector as the initial state; hence size (@batchSize x numHiddenLayers x hdim)
 	"""
-	def initHidden(self, batchSize, numHiddenLayers=1, batchFirst=False, requiresGrad=True):
+	def initHiddenZero(self, batchSize, numHiddenLayers=1, batchFirst=False, requiresGrad=True):
 		if batchFirst:
 			hidden = torch.zeros(batchSize, numHiddenLayers, self.hdim, requires_grad=requiresGrad).to(TORCH_DTYPE)
 		else:
 			hidden = torch.zeros(numHiddenLayers, batchSize, self.hdim, requires_grad=requiresGrad).to(TORCH_DTYPE)
 		return hidden
 
-	def initRandHidden(self, batchSize, numHiddenLayers=1, batchFirst=False, scale=1.0, requiresGrad=True):
+	def initHiddenRand(self, batchSize, numHiddenLayers=1, batchFirst=False, scale=1.0, requiresGrad=True):
 		"""
 		Initializes a random hidden state. This is for tasks like generation, from
 		a random initial hidden state.
@@ -139,7 +139,7 @@ class EmbeddedGRU(torch.nn.Module):
 
 	def sampleMaxIndex(self, v, stochasticChoice=False):
 		"""
-		Given a stochastic vector (1 x n) vector @v, returns the max index of the vector
+		Given a stochastic vector (1 x n) vector @v, returns the index of maximum value in the vector
 		under one of two strategies:
 			@stochasticChoice = false: just return the index of the max value in the vector (e.g. argmax(v))
 			@stochasticChoice = true: return the index sampled from the distribution of the vector. This
@@ -166,7 +166,7 @@ class EmbeddedGRU(torch.nn.Module):
 
 		return maxIndex
 
-	def beamGenerate(self, vecModel, k=1, beamWidth=1, depth=1, numSeqs=1, seqLen=20):
+	def beamGenerate(self, vecModel, k=1, beamWidth=1, numSeqs=1, seqLen=20):
 		"""
 		Inference procedure for generating language using a basic bfs beam search: At each node, expand and take its top k children,
 		ranked by probability. No fancy value estimation of node value allowed in this method (e.g., SEARN'ing).
@@ -174,30 +174,34 @@ class EmbeddedGRU(torch.nn.Module):
 			children = getChildren(beam, k) #expand all children and take their k-max children (the maxes are scoped to each parent node)
 			beam = sorted(children)[:beamWidth]
 
+		@k: The number of top-ranking children to add to the beam
+		@beamWidth: The size of the beam. Larger beams are computationally harder, but yield better results.
+
 		TODO: DFS and other forms of beam search... can't remember Jana's thesis...
 		TODO: Is there a form of Viterbi if the network if bidirectional?
 		"""
-		print("\n############### Generating {} sequences with beam search k={} beamWidth={} depth={} seqLen={} ###############".format(numSeqs,k,beamWidth,depth,seqLen))
+		print("\n############### Generating {} sequences with beam search k={} beamWidth={} seqLen={} ###############".format(numSeqs,k,beamWidth,seqLen))
 
 		#x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
 
 		for _ in range(numSeqs):
 			"""
 			#reset network
-			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=False)
+			hidden = self.initHiddenZero(1, self.numHiddenLayers, requiresGrad=False)
 			maxIndex = random.randint(0,self.xdim-1)
 			lastIndex = maxIndex
 			word = vecModel.wv.index2entity[maxIndex]
 			x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
 			seq = word
 			"""
-			#initialize random hidden state, then init beam
-			hidden = self.initRandHidden(1, self.numHiddenLayers, requiresGrad=False)
+			#initialize hidden state
+			hidden = self.initHiddenRand(1, self.numHiddenLayers, requiresGrad=False)
 			x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
-			o_t, z_t, discarded_hidden = self(x_t, hidden, verbose=False)
-			maxIndex = self.sampleMaxIndex(o_t[-1][-1], stochasticChoice=False)
-			#just start with the max prob first term, so a beam of one node
-			beam = [ Node(parent=None, index=maxIndex, logProb=o_t[-1][-1][maxIndex]) ]
+			#init beam with top-k start terms
+			o_t, z_t, hidden = self(x_t, hidden, verbose=False)
+			maxIndices = self.sampleMaxIndices(o_t[-1][-1], k)
+			beam = [ Node(parent=None, index=tup[0], logProb=tup[1], hidden=hidden) for tup in maxIndices ]
+			print("Got max start terms: {}".format([ vecModel.wv.index2entity[ tup[0] ] for tup in maxIndices ]))
 
 			for _ in range(seqLen):
 				#def getChildren(beam, k)
@@ -209,7 +213,8 @@ class EmbeddedGRU(torch.nn.Module):
 					#In this special case, @hidden and z_t are the same, since only one-step of prediction has been performed
 					o_t, z_t, hidden = self(x_t, parent.Hidden, verbose=False)
 					maxIndices = self.sampleMaxIndices(o_t[-1][-1], k)
-					children += [ Node(parent=parent, index=tup[0], logProb=tup[1]+parent.LogProb, hidden=hidden) for tup in maxIndices]
+					#print("Got {} maxIndices: {}".format(k, maxIndices))
+					children += [ Node(parent=parent, index=tup[0], logProb=tup[1]+parent.LogProb, hidden=hidden) for tup in maxIndices ]
 				#reset beam to top @beamWidth candidate nodes
 				beam = sorted(children, key=lambda node: node.LogProb, reverse=True)[:beamWidth]
 
@@ -218,22 +223,21 @@ class EmbeddedGRU(torch.nn.Module):
 			sequences = [] # store sequences as tuples: (log-prob, [a,b,c...]) but sequence is reversed
 			for node in beam:
 				prob = node.LogProb
-				print("Prob: {}".format(prob))
+				#print("Prob: {}".format(prob))
 				sequence = []
 				parent = node
 				while parent != None:
 					w = vecModel.wv.index2entity[ parent.Index ]
-					print("Word: {}".format(w))
+					#print("Word: {}".format(w))
 					sequence.append(w)
 					parent = parent.Parent
-				print("Sequence: {}".format(sequence))
-				sequences.append( (prob, [w for w in reversed(sequence)]) )
+				sequence = [w for w in reversed(sequence)]
+				print("Sequence: {} {}".format(prob, sequence))
+				sequences.append( (prob, sequence) )
 
 			print("Top sequences ranked by log-prob")
 			for seq in sequences:
 				print("{} {}".format(seq[0], " ".join(seq[1])))
-
-			return sequences
 
 	def sampleMaxIndices(self, v, k):
 		"""
@@ -248,7 +252,7 @@ class EmbeddedGRU(torch.nn.Module):
 		getting the top 3 can be reduced to O(1.5n), by inheriting info of the top two comparisons.
 		"""
 		asArray = v.detach().numpy()
-		maxIndices = np.argpartition(asArray, k)[0:k]
+		maxIndices = np.argpartition(asArray, k)[:k]
 		unorderedValues = asArray[maxIndices]
 		return [ (maxIndices[i], unorderedValues[i]) for i in range(maxIndices.size) ]
 
@@ -271,7 +275,7 @@ class EmbeddedGRU(torch.nn.Module):
 
 		for _ in range(numSeqs):
 			#reset network
-			hidden = self.initHidden(1, self.numHiddenLayers, requiresGrad=False)
+			hidden = self.initHiddenZero(1, self.numHiddenLayers, requiresGrad=False)
 			x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
 			maxIndex = random.randint(0,self.xdim-1)
 			lastIndex = maxIndex
@@ -336,7 +340,7 @@ class EmbeddedGRU(torch.nn.Module):
 
 		@dataset: A list of lists, where each list represents one training sequence and consists of (x,y) pairs
 				  of one-hot encoded vectors.
-
+		@optimizerStr: An optimizer supported by OptimizerFactory. TODO: Figure out which of these performs best.
 		@epochs: Number of training epochs. Internally this is calculated as n/@batchSize, where n=|dataset|
 		@batchSize: Number of sequences per batch to train over before backpropagating the sum gradients.
 		@torchEta: Learning rate
@@ -348,7 +352,8 @@ class EmbeddedGRU(torch.nn.Module):
 		#define the negative log-likelihood loss function
 		criterion = torch.nn.NLLLoss(ignore_index=ignoreIndex)
 		#swap different optimizers per training regime
-		optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=torchEta, momentum=momentum, optimizer=optimizerStr)
+		curEta = torchEta
+		optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
 
 		ct = 0
 		k = 20
@@ -361,7 +366,7 @@ class EmbeddedGRU(torch.nn.Module):
 				x_batch, y_batch = dataset.getNextBatch()
 				#batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
 				batchSize = x_batch.shape[0]
-				hidden = self.initHidden(batchSize, self.numHiddenLayers)
+				hidden = self.initHiddenZero(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
 				y_hat, _, _ = self(x_batch, hidden, verbose=VERBOSE)
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
@@ -378,15 +383,18 @@ class EmbeddedGRU(torch.nn.Module):
 				# Zero gradients, perform a backward pass, and update the weights.
 				optimizer.zero_grad()
 				loss.backward()
-				#note this is the wrong way to clip gradients, which should be done during backprop, not after backprop has accumulated all gradients, but torch doesn't support this easily
+				#Note: this is the wrong way to clip gradients, which should be done during backprop, not after backprop has accumulated all gradients, but torch doesn't support this easily
 				if self._clip > 0.0:
 				 	torch.nn.utils.clip_grad_norm_(self.parameters(), self._clip)
-
 				optimizer.step()
 
 				#TODO: Kludgy move
 				if epoch > 4000 and epoch < 4500:
-					optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=torchEta*0.1, momentum=momentum, optimizer=optimizerStr)
+					#TODO: Try scheduled learning rate interface instead
+					prevEta = curEta
+					curEta *= 0.1
+					print("Epoch eta reduction. Swapping optimizer with smaller eta, was={} now={}".format(prevEta, curEta))
+					optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
 	
 		except (KeyboardInterrupt):
 			self.Save()

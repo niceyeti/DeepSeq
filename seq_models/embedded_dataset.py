@@ -58,8 +58,10 @@ class EmbeddedDataset(object):
 		#may not belong here, but works better instead of building these every time we read a training sample
 		self._zero_vector_in = np.zeros(self.Model.layer1_size, dtype=NUMPY_DEFAULT_DTYPE) #vectors are stored by word2vec as (k,) size numpy arrays
 		print("Built embedded dataset. Training file will be repeated, once examples are exhausted.")
-		print("Consider passing useL2Norm to observe the effect of normalizing term vectors.")
-		print("WARNING: not yet handling out-of-model terms!!! See @truncations in _getTrainingSequence")
+		print(">>> Consider passing useL2Norm to observe the effect of normalizing term vectors.")
+		print(">>> WARNING: not yet handling out-of-model terms!!! See @truncations in _getTrainingSequence")
+		print(">>> These terms' vectors can be inferred, using...infer_vector()? Some word2vec model method that")
+		print("I can't find, may be costly, and probably isn't well supported by vector models as I'm reading them (not on KeyedVectors, not supported by FastText, etc)")
 		self.IgnoreIndex = IGNORE_INDEX
 
 	def _getLine(self):
