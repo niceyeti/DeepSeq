@@ -199,7 +199,7 @@ class EmbeddedGRU(torch.nn.Module):
 			x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
 			#init beam with top-k start terms
 			o_t, z_t, hidden = self(x_t, hidden, verbose=False)
-			maxIndices = self.sampleMaxIndices(o_t[-1][-1], k)
+			maxIndices = self.sampleMaxIndices(o_t[-1][-1], beamWidth)
 			beam = [ Node(parent=None, index=tup[0], logProb=tup[1], hidden=hidden) for tup in maxIndices ]
 			print("Got max start terms: {}".format([ vecModel.wv.index2entity[ tup[0] ] for tup in maxIndices ]))
 
@@ -217,6 +217,7 @@ class EmbeddedGRU(torch.nn.Module):
 					children += [ Node(parent=parent, index=tup[0], logProb=tup[1]+parent.LogProb, hidden=hidden) for tup in maxIndices ]
 				#reset beam to top @beamWidth candidate nodes
 				beam = sorted(children, key=lambda node: node.LogProb, reverse=True)[:beamWidth]
+				#print("Beam probs: {}".format([node.LogProb for node in beam]))
 
 			#backtrack()
 			#backtrack from all beam nodes to get full sequences
@@ -376,7 +377,7 @@ class EmbeddedGRU(torch.nn.Module):
 				losses.append(loss.item())
 				if epoch % 50 == 49: #print loss eveyr 50 epochs
 					avgLoss = sum(losses[epoch-k:]) / float(k)
-					print(epoch, avgLoss)
+					print("Epoch", epoch, avgLoss, "(batch size {})".format(batchSize))
 					if nanDetected:
 						print("Nan loss detected; suggest mitigating with shorter training regimes (shorter sequences) or gradient clipping")	
 				#print(loss)
@@ -388,14 +389,16 @@ class EmbeddedGRU(torch.nn.Module):
 				 	torch.nn.utils.clip_grad_norm_(self.parameters(), self._clip)
 				optimizer.step()
 
+				"""
 				#TODO: Kludgy move
-				if epoch > 4000 and epoch < 4500:
+				if epoch == 4000:
 					#TODO: Try scheduled learning rate interface instead
 					prevEta = curEta
 					curEta *= 0.1
 					print("Epoch eta reduction. Swapping optimizer with smaller eta, was={} now={}".format(prevEta, curEta))
 					optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
-	
+				"""	
+
 		except (KeyboardInterrupt):
 			self.Save()
 

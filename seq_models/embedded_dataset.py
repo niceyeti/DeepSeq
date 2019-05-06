@@ -36,7 +36,6 @@ class EmbeddedDataset(object):
 			#The number of batches to read-ahead and store
 			batchCacheSize=100,				\
 			torchDtype=TORCH_DTYPE,			\
-			limit = -1,						\
 			maxSeqLength = -1,				\
 			minSeqLength = -1,				\
 			useL2Norm = False):  #If true, use l2-norm of each word vector
@@ -48,7 +47,6 @@ class EmbeddedDataset(object):
 		#TODO: try True. This converts vectors to l2 norm. Might also just norm the entire model beforehand instead of re-norming every time the same word is looked up.
 		self._useL2Norm = False
 		self._maxSeqLength = maxSeqLength
-		self._limit = limit
 		self._minSeqLength = minSeqLength
 		self._batchSize = batchSize
 		self._batchCacheSize = batchCacheSize
@@ -61,7 +59,7 @@ class EmbeddedDataset(object):
 		print(">>> Consider passing useL2Norm to observe the effect of normalizing term vectors.")
 		print(">>> WARNING: not yet handling out-of-model terms!!! See @truncations in _getTrainingSequence")
 		print(">>> These terms' vectors can be inferred, using...infer_vector()? Some word2vec model method that")
-		print("I can't find, may be costly, and probably isn't well supported by vector models as I'm reading them (not on KeyedVectors, not supported by FastText, etc)")
+		print("I can't find, may be costly, and probably isn't well-supported by vector models as I'm creating them (not on KeyedVectors, not supported by FastText, etc)")
 		self.IgnoreIndex = IGNORE_INDEX
 
 	def _getLine(self):

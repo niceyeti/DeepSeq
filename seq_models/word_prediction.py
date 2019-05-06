@@ -55,8 +55,10 @@ def main():
 	bpStepLimit = 4
 	maxSeqLen = 200
 	numSequences = 100000
+	useRNN = False
+	optimizer = "adam" #TODO: Figure out the "generally best" optimizer, or default to sgd.
 	clip = -1.0 #Only applies to pytorch rnn/gru's, to mitigate exploding gradients, but I don't suggest using it. 
-	saveMinWeights = "--saveMinWeights" in sys.argv
+	#saveMinWeights = "--saveMinWeights" in sys.argv
 	useL2Norm = "--useL2Norm" in sys.argv
 	for arg in sys.argv:
 		if "-trainPath=" in arg:
@@ -85,25 +87,25 @@ def main():
 			maxSeqLen = int(arg.split("=")[-1])
 		if "--rnn" in arg.lower() or "--usernn" in arg.lower():
 			useRNN = True
+		if "-optimizer=" in arg:
+			optimizer = arg.split("=")[-1]
 	
-	#trainPath = "../data/treasureIsland_normalized.txt"
-	#modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
-	trainPath = "../data/wapo.txt"
-	modelPath = "../../VecSent/models/big_model.d2v"
+	trainPath = "../data/treasureIsland_normalized.txt"
+	modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
+	#trainPath = "../data/wapo.txt"
+	#modelPath = "../../VecSent/models/big_model.d2v"
 	ignoreIndex = -1
 
 	dataset = EmbeddedDataset( \
 		trainPath, \
 		modelPath, \
-		batchSize = 30, \
+		batchSize = miniBatchSize, \
 		batchCacheSize = 200, \
 		torchDtype = TORCH_DTYPE, \
-		limit = -1, \
 		maxSeqLength = 200, \
 		minSeqLength = 5, \
-		useL2Norm = False)
+		useL2Norm = useL2Norm)
 
-	useRNN = False
 	xDim = dataset.Model.layer1_size
 	yDim = len(dataset.Model.wv.vocab)
 	print("X dim: {}  Class size: {}".format(xDim, yDim))
@@ -119,13 +121,13 @@ def main():
 		useRNN=useRNN)
 	print("Training...")
 
-	gru.train(dataset, epochs=maxEpochs, torchEta=eta, momentum=momentum)
+	gru.train(dataset, epochs=maxEpochs, torchEta=eta, momentum=momentum, optimizerStr=optimizer)
 	#gru.Save()
 	#gru.Read()
 
-	gru.beamGenerate(dataset.Model, k=2, beamWidth=100, numSeqs=4, seqLen=15)
-	#gru.generate(dataset.Model, 30, 30, stochasticChoice=True)
-	#gru.generate(dataset.Model, 30, 30, stochasticChoice=False)
+	gru.beamGenerate(dataset.Model, k=1, beamWidth=100, numSeqs=10, seqLen=12)
+	gru.generate(dataset.Model, 30, 30, stochasticChoice=True)
+	gru.generate(dataset.Model, 30, 30, stochasticChoice=False)
 
 if __name__ == "__main__":
 	main()
