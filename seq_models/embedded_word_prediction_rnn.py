@@ -48,7 +48,6 @@ class Node(object):
 """
 A GRU cell with softmax output off the hidden state; word-embedding input/output, for some word prediction sandboxing.
 
-
 @useRNN: Using the built-in torch RNN is a simple swap, since it uses the same api as the GRU, so pass this to try an RNN
 """
 class EmbeddedGRU(torch.nn.Module):
@@ -61,7 +60,6 @@ class EmbeddedGRU(torch.nn.Module):
 		This is here instead of in the ctor because I want a single point for initialization,
 		for both construction and deserialization of an existing model.
 		"""
-		self._optimizerBuilder = OptimizerFactory()
 		self._batchFirst = batchFirst
 		self.xdim = xdim
 		self.hdim = hdim
@@ -208,7 +206,7 @@ class EmbeddedGRU(torch.nn.Module):
 				children = []
 				for parent in beam:
 					word = vecModel.wv.index2entity[ parent.Index ]
-					x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)					
+					x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)				
 					#@o_t output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
 					#In this special case, @hidden and z_t are the same, since only one-step of prediction has been performed
 					o_t, z_t, hidden = self(x_t, parent.Hidden, verbose=False)
@@ -354,7 +352,7 @@ class EmbeddedGRU(torch.nn.Module):
 		criterion = torch.nn.NLLLoss(ignore_index=ignoreIndex)
 		#swap different optimizers per training regime
 		curEta = torchEta
-		optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
+		optimizer = OptimizerFactory().GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
 
 		ct = 0
 		k = 20
@@ -384,7 +382,7 @@ class EmbeddedGRU(torch.nn.Module):
 				# Zero gradients, perform a backward pass, and update the weights.
 				optimizer.zero_grad()
 				loss.backward()
-				#Note: this is the wrong way to clip gradients, which should be done during backprop, not after backprop has accumulated all gradients, but torch doesn't support this easily
+				#Note: this is the wrong way to clip gradients. Clipping should be done during backprop, not after backprop has accumulated gradients. But the correct way isn't well-supported by torch
 				if self._clip > 0.0:
 				 	torch.nn.utils.clip_grad_norm_(self.parameters(), self._clip)
 				optimizer.step()
