@@ -57,7 +57,7 @@ class EmbeddedDataset(object):
 		self._zero_vector_in = np.zeros(self.Model.layer1_size, dtype=NUMPY_DEFAULT_DTYPE) #vectors are stored by word2vec as (k,) size numpy arrays
 		print("Built embedded dataset. Training file will be repeated, once examples are exhausted.")
 		print(">>> Consider passing useL2Norm to observe the effect of normalizing term vectors.")
-		print(">>> WARNING: not yet handling out-of-model terms!!! See @truncations in _getTrainingSequence")
+		print(">>> WARNING: not yet handling out-of-model terms!!! See @omissions in _getTrainingSequence")
 		print(">>> These terms' vectors can be inferred, using...infer_vector()? Some word2vec model method that")
 		print("I can't find, may be costly, and probably isn't well-supported by vector models as I'm creating them (not on KeyedVectors, not supported by FastText, etc)")
 		self.IgnoreIndex = IGNORE_INDEX
@@ -107,7 +107,7 @@ class EmbeddedDataset(object):
 		success = False
 		retries = 0
 		maxRetries = 100
-		truncations = 0
+		omissions = 0
 
 		while not success and retries < maxRetries:
 			line = self._getLine()
@@ -122,10 +122,14 @@ class EmbeddedDataset(object):
 					targetIndex = self.Model.wv.vocab[word].index
 					outputs.append(targetIndex)
 				else:
-					truncations += 1
+					omissions += 1
 				if self._maxSeqLength > 0 and len(seq) > self._maxSeqLength:
 					break
-			trainingSeq = list(zip(seq+[self._zero_vector_in], [self.IgnoreIndex]+outputs))
+
+			#TODO: This was the old training sequence structure
+			#trainingSeq = list(zip(seq[:-1]+[self._zero_vector_in], [self.IgnoreIndex]+outputs))
+			#print("VERIFY: I think this version is correct: training sequences consist of [:-1] inputs, [1:] outputs (offset by one position). NEED TO VERIFY")
+			trainingSeq = list(zip(seq[:-1], outputs[1:]))
 			if self._isValidTrainingSequence(trainingSeq):
 				success = True
 			else:
@@ -139,10 +143,10 @@ class EmbeddedDataset(object):
 
 	def _isValidTrainingSequence(self, seq):
 		#Returns true if @seq meets length requirements
-		return (self._minSeqLength < 0 or \
-			len(seq) >= self._minSeqLength) and \
+		return (self._minSeqLength <= 0 or \
+			len(seq)+1 >= self._minSeqLength) and \
 			(self._maxSeqLength < 0 or \
-			len(seq) <= self._maxSeqLength)
+			len(seq)+1 <= self._maxSeqLength)
 
 	def _batchifyTensorData(self, batch, batchSize=1, ignore_index=-1):
 		"""

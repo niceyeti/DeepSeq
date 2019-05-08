@@ -98,7 +98,7 @@ class EmbeddedGRU(torch.nn.Module):
 		@X_t: Input of size (batchSize x seqLen x xdim).
 		@hidden: Hidden states of size (1 x batchSize x hdim), or None, which if passed will initialize hidden states to 0.
 
-		Returns: @output of size (batchSize x seqLen x ydim), @z_t (new hidden state) of size (batchSize x seqLen x hdim), @hidden the final hidden state of dim (1 x @batchSize x hdim)
+		Returns: @output of size (batchSize x seqLen x ydim), @z_t (new hidden states) of size (batchSize x seqLen x hdim), @hidden the final hidden state of dim (1 x @batchSize x hdim)
 		NOTE: Note that @batchSize is in different locations of @hidden on input vs output
 		"""
 		z_t, finalHidden = self.rnn(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
