@@ -47,6 +47,7 @@ class OptimizerFactory(object):
 		if optimizer not in self._validOptimizers:
 			print("Optimizer {} not in valid optimizers; defaulting to sgd".format(self._validOptimizers))
 			optimizer = "sgd"
+		print("Building optimizer: "+optimizer+". WARNING: The optimizers have tons of parameters themselves. Be sure to review OptimizerFactory.")
 
 		momentum = None
 		rho = None

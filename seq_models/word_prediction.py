@@ -40,6 +40,7 @@ def usage():
 	-clip
 	-modelPath=[path to embedding model]
 	-trainPath=[path to training text]
+	-optimizer=[optimizer string] one of: "sgd","adadelta","adagrad","adam","sparseadam","adamax","asgd","lbfgs"
 	--useL2Norm: normalize word vectors in training inputs (currently inefficient, as term vector norms are not memo'ized)
 """)
 	print("Models: --torch-gru=[rnn or gru], --numpy-rnn, --custom-torch-rnn")
@@ -90,10 +91,10 @@ def main():
 		if "-optimizer=" in arg:
 			optimizer = arg.split("=")[-1]
 	
-	#trainPath = "../data/treasureIsland_normalized.txt"
-	#modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
-	trainPath = "../data/wapo.txt"
-	modelPath = "../../VecSent/models/big_model.d2v"
+	trainPath = "../data/treasureIsland_normalized.txt"
+	modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
+	#trainPath = "../data/wapo.txt"
+	#modelPath = "../../VecSent/models/big_model.d2v"
 	ignoreIndex = -1
 
 	dataset = EmbeddedDataset( \
