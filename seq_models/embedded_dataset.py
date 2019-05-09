@@ -151,6 +151,14 @@ class EmbeddedDataset(object):
 	def _batchifyTensorData(self, batch, batchSize=1, ignore_index=-1):
 		"""
 		The ugliest function, required by torch sequential batch-training models.
+		@batch: A list of training sequences, each of which is a list of tensor tuple (x,y), where x is the input embedding vector for some word,
+		and y is the next word (as an integer index).
+		@batchSize: The size of the batch. Hmmm... this could be derived from len(batch)
+		@ignore_index: The value of output indices to be ignored. See torch docs, this is used to mask certain outputs from being backpropped.
+
+		Returns a pair of tensors, batchX and batchY, for training. @batchX is size (batch-length x max seq length x xdim) and is set to 
+		zeros for unused input vectors. @batchY is size (batch-length x max seq length) and is masked with @ignore_index, which tells torch
+		not to back propagate these values (@ignore_index must be passed in during training to id the mask).
 		"""
 		#print("BATCH: "+str(batch))
 		#print("BATCH SHAPE: {}".format(batch[0][0][0].shape))
@@ -159,14 +167,13 @@ class EmbeddedDataset(object):
 
 		#convert to tensor data
 		maxLength = max(len(seq) for seq in batch)
-		batchX = torch.zeros(batchSize, maxLength, xdim).to(TORCH_DTYPE)
+		#input does not require gradients
+		batchX = torch.zeros(batchSize, maxLength, xdim, requires_grad=False).to(TORCH_DTYPE)
 		batchY = torch.zeros(batchSize, maxLength).to(TORCH_DTYPE)
 		batchY.fill_(ignore_index)
 
 		for i, seq in enumerate(batch):
 			for j, (x, y) in enumerate(seq):
-				#batchX[i,j,:] = x.clone().detach().to(TORCH_DTYPE)
-				#batchY[i,j] = y.clone().detach().to(TORCH_DTYPE)
 				batchX[i,j,:] = torch.tensor(x).to(TORCH_DTYPE)
 				batchY[i,j] = torch.tensor(y).to(TORCH_DTYPE)
 

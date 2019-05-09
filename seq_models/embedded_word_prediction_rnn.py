@@ -352,7 +352,8 @@ class EmbeddedGRU(torch.nn.Module):
 		criterion = torch.nn.NLLLoss(ignore_index=ignoreIndex)
 		#swap different optimizers per training regime
 		curEta = torchEta
-		optimizer = OptimizerFactory().GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
+		optimizerFactory = OptimizerFactory()
+		optimizer = optimizerFactory.GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
 
 		ct = 0
 		k = 20
@@ -363,7 +364,6 @@ class EmbeddedGRU(torch.nn.Module):
 		try:
 			for epoch in range(epochs):
 				x_batch, y_batch = dataset.getNextBatch()
-				#batchSeqLen = x_batch.size()[1]  #the padded length of each training sequence in this batch
 				batchSize = x_batch.shape[0]
 				hidden = self.initHiddenZero(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
@@ -387,15 +387,15 @@ class EmbeddedGRU(torch.nn.Module):
 				 	torch.nn.utils.clip_grad_norm_(self.parameters(), self._clip)
 				optimizer.step()
 
-				"""
+				
 				#TODO: Kludgy move
-				if epoch == 4000:
+				if epoch == 2000 or epoch == 4000:
 					#TODO: Try scheduled learning rate interface instead
 					prevEta = curEta
-					curEta *= 0.1
+					curEta *= 0.5
 					print("Epoch eta reduction. Swapping optimizer with smaller eta, was={} now={}".format(prevEta, curEta))
-					optimizer = self._optimizerBuilder.GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
-				"""	
+					optimizer = optimizerFactory.GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
+					
 
 		except (KeyboardInterrupt):
 			self.Save()

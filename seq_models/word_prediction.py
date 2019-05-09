@@ -43,7 +43,7 @@ def usage():
 	--useL2Norm: normalize word vectors in training inputs (currently inefficient, as term vector norms are not memo'ized)
 """)
 	print("Models: --torch-gru=[rnn or gru], --numpy-rnn, --custom-torch-rnn")
-	print("Suggested example params: python3 word_prediction.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-2 -batchSize=3 -numHiddenLayers=1 -hiddenUnits=300")
+	print("Suggested example params: python3 word_prediction.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-2 -batchSize=3 -numHiddenLayers=2 -hiddenUnits=100")
 
 def main():
 	eta = 1E-5
@@ -90,10 +90,10 @@ def main():
 		if "-optimizer=" in arg:
 			optimizer = arg.split("=")[-1]
 	
-	trainPath = "../data/treasureIsland_normalized.txt"
-	modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
-	#trainPath = "../data/wapo.txt"
-	#modelPath = "../../VecSent/models/big_model.d2v"
+	#trainPath = "../data/treasureIsland_normalized.txt"
+	#modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
+	trainPath = "../data/wapo.txt"
+	modelPath = "../../VecSent/models/big_model.d2v"
 	ignoreIndex = -1
 
 	dataset = EmbeddedDataset( \
