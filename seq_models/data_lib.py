@@ -1,5 +1,6 @@
 """
-A disorganized collection of helper functions for reading sequence data in different forms and formats.
+A collection of helper functions for reading sequence data in different forms and formats.
+
 """
 
 import string
