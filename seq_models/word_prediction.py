@@ -91,8 +91,10 @@ def main():
 		if "-optimizer=" in arg:
 			optimizer = arg.split("=")[-1]
 	
-	trainPath = "../data/treasureIsland_normalized.txt"
-	modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
+	trainPath = "../data/my_cnn.txt"
+	modelPath = "./language_util/embed/cnn_desc_model.d2v"
+	#trainPath = "../data/treasureIsland_normalized.txt"
+	#modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
 	#trainPath = "../data/wapo.txt"
 	#modelPath = "../../VecSent/models/big_model.d2v"
 	ignoreIndex = -1

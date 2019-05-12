@@ -387,15 +387,13 @@ class EmbeddedGRU(torch.nn.Module):
 				 	torch.nn.utils.clip_grad_norm_(self.parameters(), self._clip)
 				optimizer.step()
 
-				
-				#TODO: Kludgy move
-				if epoch == 2000 or epoch == 4000:
+				#TODO: Kludgy move. Try optimizer learning-rate scheduler api instead...
+				if epoch == 2000 or epoch == 8000:
 					#TODO: Try scheduled learning rate interface instead
 					prevEta = curEta
 					curEta *= 0.5
 					print("Epoch eta reduction. Swapping optimizer with smaller eta, was={} now={}".format(prevEta, curEta))
-					optimizer = optimizerFactory.GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
-					
+					self._setLearningRate(optimizer, curEta)
 
 		except (KeyboardInterrupt):
 			self.Save()
@@ -406,6 +404,10 @@ class EmbeddedGRU(torch.nn.Module):
 		xs = [i for i in range(len(avgLosses))]
 		plt.plot(xs,avgLosses)
 		plt.show()
+
+	def _setLearningRate(self, optimizer, newRate):
+		for g in optimizer.param_groups:
+			g['lr'] = newRate
 
 	################### Serialization. This could be removed to its own class if desired ###########################
 	def Save(self):
