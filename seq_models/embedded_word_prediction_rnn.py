@@ -388,7 +388,7 @@ class EmbeddedGRU(torch.nn.Module):
 				optimizer.step()
 
 				#TODO: Kludgy move. Try optimizer learning-rate scheduler api instead...
-				if epoch == 2000 or epoch == 8000:
+				if epoch == 8000:# or epoch == 16000:
 					#TODO: Try scheduled learning rate interface instead
 					prevEta = curEta
 					curEta *= 0.5
