@@ -91,8 +91,10 @@ def main():
 		if "-optimizer=" in arg:
 			optimizer = arg.split("=")[-1]
 	
-	trainPath = "../data/shuffled_cnn.txt"
-	modelPath = "./language_util/embed/cnn_desc_model.d2v"
+	#trainPath = "../data/shuffled_cnn.txt"
+	#modelPath = "./language_util/embed/cnn_desc_model.d2v"
+	trainPath = "../data/shuffled_cnn_eos.txt"
+	modelPath = "./language_util/embed/model_my_cnn_iter64_300d_cbow_window3_minFreq2.d2v"
 	#trainPath = "../data/treasureIsland_normalized.txt"
 	#modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
 	#trainPath = "../data/wapo.txt"
@@ -128,7 +130,7 @@ def main():
 	#gru.Save()
 	#gru.Read()
 
-	gru.beamGenerate(dataset.Model, k=1, beamWidth=100, numSeqs=10, seqLen=12)
+	gru.beamGenerate(dataset.Model, k=1, beamWidth=100, numSeqs=2, seqLen=10)
 	gru.generate(dataset.Model, 30, 30, stochasticChoice=True)
 	gru.generate(dataset.Model, 30, 30, stochasticChoice=False)
 

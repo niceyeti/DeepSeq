@@ -16,7 +16,6 @@ import json
 import base64
 import os
 import pickle
-
 import numpy as np
 import torch
 import random
@@ -356,7 +355,7 @@ class EmbeddedGRU(torch.nn.Module):
 		optimizer = optimizerFactory.GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
 
 		ct = 0
-		k = 20
+		k = 50
 		losses = []
 		nanDetected = False
 
@@ -373,9 +372,9 @@ class EmbeddedGRU(torch.nn.Module):
 				loss = criterion(y_hat.view(-1,self.ydim), y_batch.to(torch.int64).view(-1)) #criterion input is (N,C), where N=batch-size and C=num classes
 				nanDetected = nanDetected or torch.isnan(loss)
 				losses.append(loss.item())
-				if epoch % 50 == 49: #print loss eveyr 50 epochs
+				if epoch % k == (k-1): #print loss every 50 epochs
 					avgLoss = sum(losses[epoch-k:]) / float(k)
-					print("Epoch", epoch, avgLoss, "(batch size {})".format(batchSize))
+					print("Epoch", epoch, avgLoss, " avg loss (k={} avg) (batch size {})".format(k,batchSize))
 					if nanDetected:
 						print("Nan loss detected; suggest mitigating with shorter training regimes (shorter sequences) or gradient clipping")	
 				#print(loss)
@@ -399,7 +398,7 @@ class EmbeddedGRU(torch.nn.Module):
 			self.Save()
 
 		#plot the losses
-		k = 20
+		#k = 20
 		avgLosses = [sum(losses[i:i+k])/float(k) for i in range(len(losses)-k)]
 		xs = [i for i in range(len(avgLosses))]
 		plt.plot(xs,avgLosses)
