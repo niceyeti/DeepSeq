@@ -55,6 +55,7 @@ def main():
 	momentum = 1E-5
 	bpStepLimit = 4
 	maxSeqLen = 200
+	dropout = 0.0 #probability of dropout (0.0-1.0), for regularization
 	numSequences = 100000
 	useRNN = False
 	optimizer = "adam" #TODO: Figure out the "generally best" optimizer, or default to sgd.
@@ -64,6 +65,8 @@ def main():
 	for arg in sys.argv:
 		if "-trainPath=" in arg:
 			trainPath = arg.split("=")[-1]
+		if "-dropout=" in arg:
+			dropout = float(arg.split("=")[-1])
 		if "-modelPath=" in arg:
 			modelPath = arg.split("=")[-1]
 		if "-hiddenUnits=" in arg:
@@ -108,7 +111,7 @@ def main():
 		batchCacheSize = 200, \
 		torchDtype = TORCH_DTYPE, \
 		maxSeqLength = 200, \
-		minSeqLength = 5, \
+		minSeqLength = 8, \
 		useL2Norm = useL2Norm)
 
 	xDim = dataset.Model.layer1_size
@@ -126,13 +129,14 @@ def main():
 		useRNN=useRNN)
 	print("Training...")
 
-	gru.train(dataset, epochs=maxEpochs, torchEta=eta, momentum=momentum, optimizerStr=optimizer)
+	#gru.train(dataset, epochs=maxEpochs, torchEta=eta, momentum=momentum, optimizerStr=optimizer)
 	#gru.Save()
 	#gru.Read()
 
-	gru.beamGenerate(dataset.Model, k=1, beamWidth=100, numSeqs=2, seqLen=10)
-	gru.generate(dataset.Model, 30, 30, stochasticChoice=True)
-	gru.generate(dataset.Model, 30, 30, stochasticChoice=False)
+	#gru.beamGenerate(dataset.Model, k=1, beamWidth=100, numSeqs=2, seqLen=10)
+	#gru.generate(dataset.Model, 10, 20, stochasticChoice=True)
+	#gru.generate(dataset.Model, 10, 20, stochasticChoice=False)
+	gru.generateInteractive(dataset.Model)
 
 if __name__ == "__main__":
 	main()

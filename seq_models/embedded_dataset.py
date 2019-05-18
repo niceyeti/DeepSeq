@@ -28,6 +28,9 @@ NUMPY_DEFAULT_DTYPE=np.float32
 #The index value to ignore in torch training. This value is used by torch as a label for output categories not to backprop.
 IGNORE_INDEX = -1
 
+"""
+
+"""
 class EmbeddedDataset(object):
 	def __init__(self,						\
 			trainPath, 						\
@@ -72,10 +75,9 @@ class EmbeddedDataset(object):
 
 	"""
 	Generates batches of training sequences where each timestep prediction is from a k-dimensional embedding vector
-	to the target index (int) of the next term, per its one-hot index in word2vec model. Only the target index
-	of the target term is stored, not its one-hot encoded representation.
+	to the target index (int) of the next term, its one-hot index in a word2vec model.
 
-	TODO: This currently just skips any out of vocabulary term.
+	TODO: This currently just skips any out of vocabulary terms.
 
 	Each training sequence is a sequence of tuples of this type, k \in R --> i \in Z+
 	"""
@@ -97,7 +99,7 @@ class EmbeddedDataset(object):
 			if trainingSeq is not None:
 				batch.append(trainingSeq)
 
-		return self._batchifyTensorData(batch, self._batchSize, self.IgnoreIndex)
+		return self._batchifyTensorData(batch, self.IgnoreIndex)
 
 	def _getTrainingSequence(self):
 		"""
@@ -111,25 +113,26 @@ class EmbeddedDataset(object):
 
 		while not success and retries < maxRetries:
 			line = self._getLine()
-			seq = []
+			inputs = []
 			#target outputs are stored via their corresponding model indices, not one-hot encoded
 			outputs = []
 			#note: min sequence length is checked later below, since due to omissions (words missing vectors) we don't immediately know the length of the sequence
 			for word in line.split():
 				if word in self.Model.wv.vocab:
 					tensor = torch.tensor(self.Model.wv.word_vec(word, self._useL2Norm), dtype=self._torchDtype)
-					seq.append(tensor)
+					inputs.append(tensor)
 					targetIndex = self.Model.wv.vocab[word].index
 					outputs.append(targetIndex)
 				else:
 					omissions += 1
-				if self._maxSeqLength > 0 and len(seq) > self._maxSeqLength:
+				if self._maxSeqLength > 0 and len(inputs) > self._maxSeqLength:
 					break
 
 			#TODO: This was the old training sequence structure
 			#trainingSeq = list(zip(seq[:-1]+[self._zero_vector_in], [self.IgnoreIndex]+outputs))
 			#print("VERIFY: I think this version is correct: training sequences consist of [:-1] inputs, [1:] outputs (offset by one position). NEED TO VERIFY")
-			trainingSeq = list(zip(seq[:-1], outputs[1:]))
+			trainingSeq = list(zip(inputs[:-1], outputs[1:]))
+			#trainingSeq = list(zip(inputs, outputs))
 			if self._isValidTrainingSequence(trainingSeq):
 				success = True
 			else:
@@ -148,12 +151,11 @@ class EmbeddedDataset(object):
 			(self._maxSeqLength < 0 or \
 			len(seq)+1 <= self._maxSeqLength)
 
-	def _batchifyTensorData(self, batch, batchSize=1, ignore_index=-1):
+	def _batchifyTensorData(self, batch, ignore_index=-1):
 		"""
 		The ugliest function, required by torch sequential batch-training models.
 		@batch: A list of training sequences, each of which is a list of tensor tuple (x,y), where x is the input embedding vector for some word,
 		and y is the next word (as an integer index).
-		@batchSize: The size of the batch. Hmmm... this could be derived from len(batch)
 		@ignore_index: The value of output indices to be ignored. See torch docs, this is used to mask certain outputs from being backpropped.
 
 		Returns a pair of tensors, batchX and batchY, for training. @batchX is size (batch-length x max seq length x xdim) and is set to 
@@ -167,15 +169,18 @@ class EmbeddedDataset(object):
 
 		#convert to tensor data
 		maxLength = max(len(seq) for seq in batch)
+		batchSize = len(batch)
 		#input does not require gradients
 		batchX = torch.zeros(batchSize, maxLength, xdim, requires_grad=False).to(TORCH_DTYPE)
 		batchY = torch.zeros(batchSize, maxLength).to(TORCH_DTYPE)
 		batchY.fill_(ignore_index)
 
-		for i, seq in enumerate(batch):
-			for j, (x, y) in enumerate(seq):
-				batchX[i,j,:] = torch.tensor(x).to(TORCH_DTYPE)
-				batchY[i,j] = torch.tensor(y).to(TORCH_DTYPE)
+		for b, seq in enumerate(batch):
+			for t, (x_vec, y_int) in enumerate(seq):
+				batchX[b,t,:] = x_vec
+				batchY[b,t] = y_int
+				#batchX[i,j,:] = torch.tensor(x_vec).to(TORCH_DTYPE)
+				#batchY[i,j] = torch.tensor(y_int).to(TORCH_DTYPE)
 
 		return batchX, batchY
 

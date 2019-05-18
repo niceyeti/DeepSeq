@@ -22,6 +22,7 @@ import random
 import matplotlib.pyplot as plt
 from torch_optimizer_builder import OptimizerFactory
 import matplotlib.pyplot as plt
+import traceback
 
 TORCH_DTYPE=torch.float32
 torch.set_default_dtype(TORCH_DTYPE)
@@ -48,15 +49,24 @@ class Node(object):
 A GRU cell with softmax output off the hidden state; word-embedding input/output, for some word prediction sandboxing.
 
 @useRNN: Using the built-in torch RNN is a simple swap, since it uses the same api as the GRU, so pass this to try an RNN
+@dropout: If non-zero, introduces a Dropout layer on the outputs of each RNN layer except the last layer, with dropout probability equal to dropout. Default: 0
 """
 class EmbeddedGRU(torch.nn.Module):
-	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst=True, clip=-1, useRNN=False):
+	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst=True, clip=-1, useRNN=False, dropout=0.0):
 		super(EmbeddedGRU, self).__init__()
-		self._initialize(xdim, hdim, ydim, numHiddenLayers, batchFirst, clip, useRNN)
 
-	def _initialize(self, xdim, hdim, ydim, numHiddenLayers, batchFirst=True, clip=-1, useRNN=False):
+		if dropout >= 1.0 or dropout < 0:
+			raise Exception("Dropout must be in (0.0-1.0)")
+
+		self._build(xdim, hdim, ydim, numHiddenLayers, batchFirst, clip, useRNN, dropout=dropout)
+		self._initialize()
+
+	def _initialize(self):
+		self.Read()
+
+	def _build(self, xdim, hdim, ydim, numHiddenLayers, batchFirst=True, clip=-1, useRNN=False, dropout=0.0):
 		"""
-		This is here instead of in the ctor because I want a single point for initialization,
+		This is here instead of in the ctor because I want a single point for initialization, e.g.
 		for both construction and deserialization of an existing model.
 		"""
 		self._batchFirst = batchFirst
@@ -66,10 +76,10 @@ class EmbeddedGRU(torch.nn.Module):
 		self.numHiddenLayers = numHiddenLayers
 		#build the network models
 		if useRNN:
-			self.rnn = torch.nn.RNN(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
+			self.rnn = torch.nn.RNN(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst, dropout=dropout)
 			self.modelType = "rnn"
 		else:
-			self.rnn = torch.nn.GRU(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst)
+			self.rnn = torch.nn.GRU(input_size=xdim, hidden_size=hdim, num_layers=numHiddenLayers, batch_first=self._batchFirst, dropout=dropout)
 			self.modelType = "gru"
 
 		self.linear = torch.nn.Linear(hdim, ydim)
@@ -81,10 +91,6 @@ class EmbeddedGRU(torch.nn.Module):
 			self._clip = 1
 		else:
 			self._clip = -1
-
-		#print("State dict: "+str(self.state_dict()))
-		#self.Save()
-		self.Read()
 
 	def _initWeights(self, initRange=1.0):
 		for gruWeights in self.rnn.all_weights:
@@ -230,7 +236,7 @@ class EmbeddedGRU(torch.nn.Module):
 					sequence.append(w)
 					parent = parent.Parent
 				sequence = [w for w in reversed(sequence)]
-				print("Sequence: {} {}".format(prob, sequence))
+				#print("Sequence: {} {}".format(prob, sequence))
 				sequences.append( (prob, sequence) )
 
 			print("Top sequences ranked by log-prob")
@@ -254,7 +260,7 @@ class EmbeddedGRU(torch.nn.Module):
 		unorderedValues = asArray[maxIndices]
 		return [ (maxIndices[i], unorderedValues[i]) for i in range(maxIndices.size) ]
 
-	def generate(self, vecModel, numSeqs=1, seqLen=50, stochasticChoice=False, allowRecurrentNoise=False):
+	def generate(self, vecModel, numSeqs=1, seqLen=50, stochasticChoice=False):
 		"""
 		Generates one word at a time, via a simple max procedure. Ergo, this is bigram generation.
 		@reverseEncoding: A gensim word2vec model for converting output probabilities and their indices back into words.
@@ -264,10 +270,6 @@ class EmbeddedGRU(torch.nn.Module):
 			over output words, as opposed to selecting the maximum probability prediction. Note for large models, this
 			likely won't work very well, since the portion of probability assigned to terms is likely very small even
 			for the max term.
-		@allowRecurrentNoise: Just an interesting parameter to observe: during generation, the output y'
-		becomes the input to the next stage, and canonically should be one-hotted such that only the max
-		entry is 1.0, and all others zero. However you can instead not one-hot the vector, leaving other noise
-		in the vector. No idea what this will do, its just interesting to leave in.
 		"""
 		print("\n###################### Generating {} sequences with stochasticChoice={} #######################".format(numSeqs,stochasticChoice))
 
@@ -278,7 +280,7 @@ class EmbeddedGRU(torch.nn.Module):
 			maxIndex = random.randint(0,self.xdim-1)
 			lastIndex = maxIndex
 			word = vecModel.wv.index2entity[maxIndex]
-			x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
+			x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word), requires_grad=False)
 			seq = word
 			for _ in range(seqLen):
 				#@o_t output of size (1 x 1 x ydim), @z_t (new hidden state) of size (1 x 1 x hdim)
@@ -294,9 +296,37 @@ class EmbeddedGRU(torch.nn.Module):
 				seq += (" " + word)
 				#TODO: probly a faster way than this to get word vector from word index
 				x_t.zero_()
-				x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word)[:], requires_grad=False)
+				x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word), requires_grad=False)
 
 			print(seq+"<")
+
+	def generateInteractive(self, vecModel):
+		"""
+		For qualitative testing: generate one-step predictions with manual user input.
+		Enter a word, view highest prob outputs, enter another term, and continue.
+		"""
+		x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
+		hidden = self.initHiddenZero(1, self.numHiddenLayers, requiresGrad=False)
+
+		print("Interactive prediction. Enter ctrl+c to exit, <restart> to restart")
+
+		try:
+			while True:
+				word = input("Enter word:  ")
+				if word == "<restart>":
+					x_t = torch.zeros(1, 1, self.xdim, requires_grad=False)
+					hidden = self.initHiddenZero(1, self.numHiddenLayers, requiresGrad=False)
+				else:
+					x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word), requires_grad=False)
+					o_t, z_t, hidden = self(x_t, hidden, verbose=False)
+					#sample max indices
+					maxIndices = self.sampleMaxIndices(o_t[-1][-1], 12)
+					maxIndices = sorted(maxIndices, key=lambda t: t[1], reverse=True)
+					print("Max output terms, by log-prob:")
+					for i, tup in enumerate(maxIndices):
+						print("    {}. {} {}".format(i, vecModel.wv.index2entity[ tup[0] ], tup[1]))
+		except:
+			traceback.print_exc()
 
 	def visualizeOutputs(self, v, vecModel):
 		plot = self.plotDistribution(v)
@@ -349,7 +379,6 @@ class EmbeddedGRU(torch.nn.Module):
 
 		#define the negative log-likelihood loss function
 		criterion = torch.nn.NLLLoss(ignore_index=ignoreIndex)
-		#swap different optimizers per training regime
 		curEta = torchEta
 		optimizerFactory = OptimizerFactory()
 		optimizer = optimizerFactory.GetOptimizer(parameters=self.parameters(), lr=curEta, momentum=momentum, optimizer=optimizerStr)
@@ -358,6 +387,8 @@ class EmbeddedGRU(torch.nn.Module):
 		k = 50
 		losses = []
 		nanDetected = False
+
+		print("TODO: dropout layers")
 
 		#try just allows user to press ctrl+c to interrupt training and observe his or her network at any point
 		try:
@@ -376,8 +407,7 @@ class EmbeddedGRU(torch.nn.Module):
 					avgLoss = sum(losses[epoch-k:]) / float(k)
 					print("Epoch", epoch, avgLoss, " avg loss (k={} avg) (batch size {})".format(k,batchSize))
 					if nanDetected:
-						print("Nan loss detected; suggest mitigating with shorter training regimes (shorter sequences) or gradient clipping")	
-				#print(loss)
+						print("Nan loss detected; suggest mitigating with shorter training regimes (shorter sequences) or gradient clipping")
 				# Zero gradients, perform a backward pass, and update the weights.
 				optimizer.zero_grad()
 				loss.backward()
