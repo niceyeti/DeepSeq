@@ -113,6 +113,9 @@ class EmbeddedGRU(torch.nn.Module):
 		NOTE: Note that @batchSize is in different locations of @hidden on input vs output
 		"""
 		z_t, finalHidden = self.rnn(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
+		#
+		z_t, outputLens = torch.nn.utils.rnn.pad_packed_sequence(z_t, batch_first=True, total_length=x_t.size()[1])
+		#run linear outputs and softmax
 		s_t = self.linear(z_t)
 		output = self.logSoftmax(s_t)
 		if verbose:
@@ -399,11 +402,12 @@ class EmbeddedGRU(torch.nn.Module):
 		#try just allows user to press ctrl+c to interrupt training and observe his or her network at any point
 		try:
 			for epoch in range(epochs):
-				x_batch, y_batch = dataset.getNextBatch()
+				x_batch, y_batch = dataset.getNextPackedBatch()
 				batchSize = x_batch.shape[0]
 				hidden = self.initHiddenZero(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
 				y_hat, _, _ = self(x_batch, hidden, verbose=VERBOSE)
+
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
 				# of the target value at each time step t.
 				loss = criterion(y_hat.view(-1,self.ydim), y_batch.to(torch.int64).view(-1)) #criterion input is (N,C), where N=batch-size and C=num classes

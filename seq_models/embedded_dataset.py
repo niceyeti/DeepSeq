@@ -81,7 +81,7 @@ class EmbeddedDataset(object):
 
 	Each training sequence is a sequence of tuples of this type, k \in R --> i \in Z+
 	"""
-	def getNextBatch(self):
+	def getNextPackedBatch(self):
 		if len(self._batchCache) == 0:
 			self._readAhead(self._batchCacheSize)
 		return self._batchCache.pop()
@@ -104,7 +104,10 @@ class EmbeddedDataset(object):
 	def _getTrainingSequence(self):
 		"""
 		Reads single training sequence, reading lines until it constructs a sufficient example in terms of min/max length.
-		Returns None if no example found.
+
+		Returns: A training sequence as a list of tuples (x_t,y_t), where x_t is the input at time t and y_t is its
+		target output as an integer, both taken from the vector model @Model. Returns none if no example found under length
+		restrictions.
 		"""
 		success = False
 		retries = 0
@@ -152,6 +155,32 @@ class EmbeddedDataset(object):
 			len(seq)+1 <= self._maxSeqLength)
 
 	def _batchifyTensorData(self, batch, ignore_index=-1):
+		"""
+		Converts @batch to a dataset of packed/padded sequences and target outputs.
+
+		REMEMBER: If you pack+pad sequences, you need to unpack+unpad on the output of a network.
+
+		@batch: A list of training sequences as returned by _getTrainingSequence().
+		"""
+		#training sequences must be sorted in descending length before padding/packing
+		batch = sorted(x_batch, key=lambda seq: len(seq), reverse=True) #TODO: Performance. insert training seqs in order instead of calling sorted()
+		seqLen = len(batch[0])
+		#get all input tensor sequences
+		x_batch = [[tup[0] for tup in seq] for seq in batch]
+		#get all outputs (class integers) and append ignore_index to all output sequences so they are all the same length. @ignore_index is ignored during training.
+		y_batch = [[tup[1] for tup in seq]+[ignore_index for i in range(seqLen)] for seq in batch]
+		seqLens = [len(seq) for seq in x_batch]
+		#print("Seq batch:\n",batch)
+		#pad the sequences
+		paddedBatch = torch.nn.utils.rnn.pad_sequence(x_batch, batch_first=True)
+		#print("Padded batch:\n", paddedBatch)
+		#pack the sequences
+		packedBatch = torch.nn.utils.rnn.pack_padded_sequence(paddedBatch, lengths=seqLens, batch_first=True)
+		#print("Packed batch:\n", packedBatch)
+
+		return packedBatch, y_batch
+
+	def _batchifyTensorData_OLD(self, batch, ignore_index=-1):
 		"""
 		The ugliest function, required by torch sequential batch-training models.
 		@batch: A list of training sequences, each of which is a list of tensor tuple (x,y), where x is the input embedding vector for some word,

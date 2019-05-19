@@ -122,6 +122,9 @@ def trainingExamples(packedBatch):
 
 
 
+
+
+
 """
 Make a simple batch-based rnn:
 	input batch: (b x seq x xdim)
