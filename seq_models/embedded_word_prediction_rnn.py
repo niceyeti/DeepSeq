@@ -29,7 +29,7 @@ torch.set_default_dtype(TORCH_DTYPE)
 
 VERBOSE = False
 
-#TODO: Remove this to separate generation component. It is used for beam search based inference.
+#TODO: Remove this and generate() functionality to separate generation component. It is used for beam search based inference.
 class Node(object):
 	def __init__(self, parent=None, index=-1, logProb=1.0, hidden=None):
 		"""
@@ -93,6 +93,12 @@ class EmbeddedGRU(torch.nn.Module):
 			self._clip = -1
 
 	def _initWeights(self, initRange=1.0):
+		"""
+		Manually initialize the weights. There is some theory behind initialization, and you should consider relying on torch's
+		default behavior, such as the way it inits GRU's:
+			'...with All the weights and biases are initialized from U(−k,k)\mathcal{U}(-\sqrt{k}, \sqrt{k})U(−k​,k​) where k=1hidden_sizek = \frac{1}{\text{hidden\_size}}k=hidden_size1​'
+			See the GRU nn docs: https://pytorch.org/docs/stable/nn.html
+		"""
 		for gruWeights in self.rnn.all_weights:
 			for weight in gruWeights:
 				weight.data.uniform_(-initRange, initRange)
@@ -103,7 +109,7 @@ class EmbeddedGRU(torch.nn.Module):
 		@X_t: Input of size (batchSize x seqLen x xdim).
 		@hidden: Hidden states of size (1 x batchSize x hdim), or None, which if passed will initialize hidden states to 0.
 
-		Returns: @output of size (batchSize x seqLen x ydim), @z_t (new hidden states) of size (batchSize x seqLen x hdim), @hidden the final hidden state of dim (1 x @batchSize x hdim)
+		Returns: @output final softmax output of size (batchSize x seqLen x ydim), @z_t (gru hidden states) of size (batchSize x seqLen x hdim), @hidden the final gru hidden state of dim (1 x @batchSize x hdim)
 		NOTE: Note that @batchSize is in different locations of @hidden on input vs output
 		"""
 		z_t, finalHidden = self.rnn(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state

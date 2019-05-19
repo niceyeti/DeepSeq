@@ -129,7 +129,7 @@ def main():
 		useRNN=useRNN)
 	print("Training...")
 
-	#gru.train(dataset, epochs=maxEpochs, torchEta=eta, momentum=momentum, optimizerStr=optimizer)
+	gru.train(dataset, epochs=maxEpochs, torchEta=eta, momentum=momentum, optimizerStr=optimizer)
 	#gru.Save()
 	#gru.Read()
 
