@@ -95,9 +95,9 @@ class EmbeddedDataset(object):
 	def _getNextBatch(self):
 		batch = []
 		while len(batch) < self._batchSize:
-			trainingSeq = self._getTrainingSequence()
-			if trainingSeq is not None:
-				batch.append(trainingSeq)
+			trainingTup = self._getTrainingSequence()
+			if trainingTup is not None:
+				batch.append(trainingTup)
 
 		return self._batchifyTensorData(batch, self.IgnoreIndex)
 
@@ -122,30 +122,42 @@ class EmbeddedDataset(object):
 			#note: min sequence length is checked later below, since due to omissions (words missing vectors) we don't immediately know the length of the sequence
 			for word in line.split():
 				if word in self.Model.wv.vocab:
-					tensor = torch.tensor(self.Model.wv.word_vec(word, self._useL2Norm), dtype=self._torchDtype)
-					inputs.append(tensor)
+					#tensor = torch.tensor(self.Model.wv.word_vec(word, self._useL2Norm), dtype=self._torchDtype)
+					vec = self.Model.wv.word_vec(word, self._useL2Norm)
+					inputs.append(vec)
 					targetIndex = self.Model.wv.vocab[word].index
 					outputs.append(targetIndex)
 				else:
 					omissions += 1
 				if self._maxSeqLength > 0 and len(inputs) > self._maxSeqLength:
 					break
+			#Time align the predictions: x_t is input word vector time t, and its target, word at t+1
+			#TODO: verify this, and also note its impact. Sometimes you want to backprop all the way to an initial state, e.g. the prior term frequency/state distribution.
+			inputs = inputs[:-1]
+			outputs = outputs[1:]
 
-			#TODO: This was the old training sequence structure
-			#trainingSeq = list(zip(seq[:-1]+[self._zero_vector_in], [self.IgnoreIndex]+outputs))
-			#print("VERIFY: I think this version is correct: training sequences consist of [:-1] inputs, [1:] outputs (offset by one position). NEED TO VERIFY")
-			trainingSeq = list(zip(inputs[:-1], outputs[1:]))
-			#trainingSeq = list(zip(inputs, outputs))
-			if self._isValidTrainingSequence(trainingSeq):
+			if self._isValidTrainingSequence(outputs):
 				success = True
+				#convert inputs into a single tensor of size (seqLen x xdim), omitting last input (last word is not an input) and first output (first word is not predicted...yet)
+				x_tensor = torch.zeros(len(inputs), inputs[0].shape[0], dtype=self._torchDtype, requires_grad=False)
+				for t in range(len(inputs)):
+					x_tensor[t,:] = torch.from_numpy(inputs[t])
+				#print("X tensor: ",x_tensor, x_tensor.size())
+				#exit()
+				trainingTup = (x_tensor, outputs)
+				#TODO: This was the old training sequence structure
+				#trainingSeq = list(zip(seq[:-1]+[self._zero_vector_in], [self.IgnoreIndex]+outputs))
+				#print("VERIFY: I think this version is correct: training sequences consist of [:-1] inputs, [1:] outputs (offset by one position). NEED TO VERIFY")
+				#trainingSeq = list(zip(inputs[:-1], outputs[1:]))
+				#trainingSeq = list(zip(inputs, outputs))
 			else:
 				retries += 1
 
 		if not success and retries >= maxRetries:
 			print("WARNING maxRetries reached in dataset._getTrainingSequence")
-			trainingSeq = None
+			trainingTup = None
 
-		return trainingSeq
+		return x_tensor, outputs
 
 	def _isValidTrainingSequence(self, seq):
 		#Returns true if @seq meets length requirements
@@ -163,12 +175,15 @@ class EmbeddedDataset(object):
 		@batch: A list of training sequences as returned by _getTrainingSequence().
 		"""
 		#training sequences must be sorted in descending length before padding/packing
-		batch = sorted(x_batch, key=lambda seq: len(seq), reverse=True) #TODO: Performance. insert training seqs in order instead of calling sorted()
-		seqLen = len(batch[0])
+		batch = sorted(batch, key=lambda tup: len(tup[1]), reverse=True) #TODO: Performance. insert training seqs in order instead of calling sorted()
+		print("Sorted batch sizes: "+",".join([str(len(tup[1])) for tup in batch]))
+		#get max length from the longest training sequence
+		seqLen = len(batch[0][1])
 		#get all input tensor sequences
-		x_batch = [[tup[0] for tup in seq] for seq in batch]
+		x_batch = [tup[0] for tup in batch]
 		#get all outputs (class integers) and append ignore_index to all output sequences so they are all the same length. @ignore_index is ignored during training.
-		y_batch = [[tup[1] for tup in seq]+[ignore_index for i in range(seqLen)] for seq in batch]
+		y_batch = [yseq + [ignore_index for _ in range(seqLen-len(yseq))] for _, yseq in batch]
+		y_batch = torch.LongTensor(y_batch)
 		seqLens = [len(seq) for seq in x_batch]
 		#print("Seq batch:\n",batch)
 		#pad the sequences

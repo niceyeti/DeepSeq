@@ -113,8 +113,10 @@ class EmbeddedGRU(torch.nn.Module):
 		NOTE: Note that @batchSize is in different locations of @hidden on input vs output
 		"""
 		z_t, finalHidden = self.rnn(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
-		#
-		z_t, outputLens = torch.nn.utils.rnn.pad_packed_sequence(z_t, batch_first=True, total_length=x_t.size()[1])
+		print(str(type(x_t)))
+		if type(x_t) == torch.nn.utils.rnn.PackedSequence:
+			#re-pad packed sequences, so we always return tensors
+			z_t, outputLens = torch.nn.utils.rnn.pad_packed_sequence(z_t, batch_first=True)
 		#run linear outputs and softmax
 		s_t = self.linear(z_t)
 		output = self.logSoftmax(s_t)
@@ -327,6 +329,7 @@ class EmbeddedGRU(torch.nn.Module):
 					hidden = self.initHiddenZero(1, self.numHiddenLayers, requiresGrad=False)
 				else:
 					x_t[0][0][:] = torch.tensor(vecModel.wv.get_vector(word), requires_grad=False)
+					
 					o_t, z_t, hidden = self(x_t, hidden, verbose=False)
 					#sample max indices
 					maxIndices = self.sampleMaxIndices(o_t[-1][-1], 12)
@@ -403,7 +406,7 @@ class EmbeddedGRU(torch.nn.Module):
 		try:
 			for epoch in range(epochs):
 				x_batch, y_batch = dataset.getNextPackedBatch()
-				batchSize = x_batch.shape[0]
+				batchSize = len(y_batch)
 				hidden = self.initHiddenZero(batchSize, self.numHiddenLayers)
 				# Forward pass: Compute predicted y by passing x to the model
 				y_hat, _, _ = self(x_batch, hidden, verbose=VERBOSE)
