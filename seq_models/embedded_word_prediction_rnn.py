@@ -113,7 +113,7 @@ class EmbeddedGRU(torch.nn.Module):
 		NOTE: Note that @batchSize is in different locations of @hidden on input vs output
 		"""
 		z_t, finalHidden = self.rnn(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
-		print(str(type(x_t)))
+		#print(str(type(x_t)))
 		if type(x_t) == torch.nn.utils.rnn.PackedSequence:
 			#re-pad packed sequences, so we always return tensors
 			z_t, outputLens = torch.nn.utils.rnn.pad_packed_sequence(z_t, batch_first=True)

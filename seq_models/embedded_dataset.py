@@ -176,7 +176,7 @@ class EmbeddedDataset(object):
 		"""
 		#training sequences must be sorted in descending length before padding/packing
 		batch = sorted(batch, key=lambda tup: len(tup[1]), reverse=True) #TODO: Performance. insert training seqs in order instead of calling sorted()
-		print("Sorted batch sizes: "+",".join([str(len(tup[1])) for tup in batch]))
+		#print("Sorted batch sizes: "+",".join([str(len(tup[1])) for tup in batch]))
 		#get max length from the longest training sequence
 		seqLen = len(batch[0][1])
 		#get all input tensor sequences
