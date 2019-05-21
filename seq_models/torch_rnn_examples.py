@@ -4,6 +4,7 @@ Key:
 	'seq': training sequence length
 	'xdim': input dimension real-valued x vectors
 	'ydim': num output classes
+	'num-directions': this applies to bidirectional rnn's, and adds a significant degree of complexity in training and datasets.
 
 The generic torch optimization pattern:
 

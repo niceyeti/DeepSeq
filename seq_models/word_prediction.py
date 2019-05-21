@@ -133,9 +133,9 @@ def main():
 	#gru.Save()
 	#gru.Read()
 
-	#gru.beamGenerate(dataset.Model, k=1, beamWidth=100, numSeqs=2, seqLen=10)
-	#gru.generate(dataset.Model, 10, 20, stochasticChoice=True)
-	#gru.generate(dataset.Model, 10, 20, stochasticChoice=False)
+	gru.beamGenerate(dataset.Model, k=1, beamWidth=100, numSeqs=2, seqLen=10)
+	gru.generate(dataset.Model, 10, 20, stochasticChoice=True)
+	gru.generate(dataset.Model, 10, 20, stochasticChoice=False)
 	gru.generateInteractive(dataset.Model)
 
 if __name__ == "__main__":

@@ -104,27 +104,6 @@ class EmbeddedGRU(torch.nn.Module):
 				weight.data.uniform_(-initRange, initRange)
 		self.linear.weight.data.uniform_(-initRange, initRange)
 
-	def forward(self, x_t, hidden=None, verbose=False):
-		"""
-		@X_t: Input of size (batchSize x seqLen x xdim).
-		@hidden: Hidden states of size (1 x batchSize x hdim), or None, which if passed will initialize hidden states to 0.
-
-		Returns: @output final softmax output of size (batchSize x seqLen x ydim), @z_t (gru hidden states) of size (batchSize x seqLen x hdim), @hidden the final gru hidden state of dim (1 x @batchSize x hdim)
-		NOTE: Note that @batchSize is in different locations of @hidden on input vs output
-		"""
-		z_t, finalHidden = self.rnn(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
-		#print(str(type(x_t)))
-		if type(x_t) == torch.nn.utils.rnn.PackedSequence:
-			#re-pad packed sequences, so we always return tensors
-			z_t, outputLens = torch.nn.utils.rnn.pad_packed_sequence(z_t, batch_first=True)
-		#run linear outputs and softmax
-		s_t = self.linear(z_t)
-		output = self.logSoftmax(s_t)
-		if verbose:
-			print("x_t size: {} hidden size: {}  z_t size: {} s_t size: {} output.size(): {}".format(x_t.size(), hidden.size(), z_t.size(), s_t.size(), output.size()))
-
-		return output, z_t, finalHidden
-
 	"""
 	The axis semantics are (num_layers, minibatch_size, hidden_dim).
 	@batchFirst: Determines if batchSize comes before or after numHiddenLayers in tensor dimension
@@ -362,6 +341,27 @@ class EmbeddedGRU(torch.nn.Module):
 		plot = plt.plot(xs,ys)
 		return plot
 
+	def forward(self, x_t, hidden=None, verbose=False):
+		"""
+		@X_t: Input of size (batchSize x seqLen x xdim).
+		@hidden: Hidden states of size (1 x batchSize x hdim), or None, which if passed will initialize hidden states to 0.
+
+		Returns: @output final softmax output of size (batchSize x seqLen x ydim), @z_t (gru hidden states) of size (batchSize x seqLen x hdim), @hidden the final gru hidden state of dim (1 x @batchSize x hdim)
+		NOTE: Note that @batchSize is in different locations of @hidden on input vs output
+		"""
+		z_t, finalHidden = self.rnn(x_t, hidden) #@output contains all hidden states [1..t], whereas @hidden only contains the final hidden state
+		#print(str(type(x_t)))
+		if type(x_t) == torch.nn.utils.rnn.PackedSequence:
+			#re-pad packed sequences, so we always return tensors
+			z_t, outputLens = torch.nn.utils.rnn.pad_packed_sequence(z_t, batch_first=True)
+		#run linear outputs and softmax
+		s_t = self.linear(z_t)
+		output = self.logSoftmax(s_t)
+		if verbose:
+			print("x_t size: {} hidden size: {}  z_t size: {} s_t size: {} output.size(): {}".format(x_t.size(), hidden.size(), z_t.size(), s_t.size(), output.size()))
+
+		return output, z_t, finalHidden
+
 	def train(self, dataset, epochs, torchEta=1E-3, momentum=0.9, optimizerStr="adam", ignoreIndex=-1):
 		"""
 		This is just a working example of a torch BPTT network; it is far from correct yet.
@@ -389,6 +389,7 @@ class EmbeddedGRU(torch.nn.Module):
 		@ignore_index: Output target index values to ignore. These represent missing words or other non-targets. See pytorch docs.
 		"""
 
+		#TODO: NLLLoss accepts a weight vector for imbalanced classes, which this input data certainly is. Its worth a gander...
 		#define the negative log-likelihood loss function
 		criterion = torch.nn.NLLLoss(ignore_index=ignoreIndex)
 		curEta = torchEta
@@ -408,7 +409,7 @@ class EmbeddedGRU(torch.nn.Module):
 				x_batch, y_batch = dataset.getNextPackedBatch()
 				batchSize = len(y_batch)
 				hidden = self.initHiddenZero(batchSize, self.numHiddenLayers)
-				# Forward pass: Compute predicted y by passing x to the model
+				# Forward pass: Compute predicted y (b x seqlen x ydim) by passing x_batch to the model
 				y_hat, _, _ = self(x_batch, hidden, verbose=VERBOSE)
 
 				# Compute and print loss. As a one-hot target nl-loss, the target parameter is a vector of indices representing the index
