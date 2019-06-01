@@ -97,7 +97,9 @@ def main():
 	#trainPath = "../data/shuffled_cnn.txt"
 	#modelPath = "./language_util/embed/cnn_desc_model.d2v"
 	trainPath = "../data/shuffled_cnn_eos.txt"
-	modelPath = "./language_util/embed/model_my_cnn_iter64_300d_cbow_window3_minFreq2.d2v"
+	modelPath = "../../Sentinel/sentinel/cheetah_models/fasttext_cc.en.300.vec"
+
+	#modelPath = "./language_util/embed/model_my_cnn_iter64_300d_cbow_window3_minFreq2.d2v"
 	#trainPath = "../data/treasureIsland_normalized.txt"
 	#modelPath = "../data/treasure_island_wordtovec_100iter_150d_10w_5min_cbow"
 	#trainPath = "../data/wapo.txt"
@@ -119,7 +121,7 @@ def main():
 	print("X dim: {}  Class size: {}".format(xDim, yDim))
 
 	#Try these params: python3 BPTT.py  -maxEpochs=100000 -momentum=0.9 -eta=1E-3 --torch-gru -batchSize=10 -numHiddenLayers=2
-	gru = EmbeddedGRU( \
+	gru = EmbeddedRNN( \
 		xDim, \
 		hiddenUnits, \
 		yDim, \

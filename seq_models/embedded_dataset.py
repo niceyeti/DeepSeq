@@ -134,7 +134,7 @@ class EmbeddedDataset(object):
 				if self._maxSeqLength > 0 and len(inputs) > self._maxSeqLength:
 					break
 			#Time align the predictions: x_t is input word vector time t, and its target, word at t+1
-			#TODO: verify this, and also note its impact. Sometimes you want to backprop all the way to an initial state, and learn the prior term frequency/state distribution.
+			#TODO: verify this, and also note its impact. Sometimes you want to backprop all the way to an initial state, and learn the initial term frequency/state distribution.
 			inputs = inputs[:-1]
 			outputs = outputs[1:]
 

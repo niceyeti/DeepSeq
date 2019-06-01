@@ -51,9 +51,9 @@ A GRU cell with softmax output off the hidden state; word-embedding input/output
 @useRNN: Using the built-in torch RNN is a simple swap, since it uses the same api as the GRU, so pass this to try an RNN
 @dropout: If non-zero, introduces a Dropout layer on the outputs of each RNN layer except the last layer, with dropout probability equal to dropout. Default: 0
 """
-class EmbeddedGRU(torch.nn.Module):
+class EmbeddedRNN(torch.nn.Module):
 	def __init__(self, xdim, hdim, ydim, numHiddenLayers, batchFirst=True, clip=-1, useRNN=False, dropout=0.0):
-		super(EmbeddedGRU, self).__init__()
+		super(EmbeddedRNN, self).__init__()
 
 		if dropout >= 1.0 or dropout < 0:
 			raise Exception("Dropout must be in (0.0-1.0)")
