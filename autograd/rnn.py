@@ -95,16 +95,31 @@ def rnn_log_likelihood(params, inputs, targets):
 
 ### Dataset setup ##################
 
-def string_to_one_hot(string, maxchar):
-    """Converts an ASCII string to a one-of-k encoding."""
+def string_to_one_hot(string, num_classes):
+    """
+    Converts an ASCII string to a one-of-k encoding.
+    Returns: an array of one-hot encoded vectors of size (n x num_classes) where n = len(string) = seqLen, and num_classes is length of one-hot vecs.
+    The numpy idioms are very dense here, just take them one at a time.
+    """
+	# @ascii is shape (k,) where k = len(string)
     ascii = np.array([ord(c) for c in string]).T
-    return np.array(ascii[:,None] == np.arange(maxchar)[None, :], dtype=int)
+	# 1) np.arange(3) is array([0, 1, 2]).  np.arange(3) is array([[0, 1, 2]]), and so on. Each 'None,' adds another axis [] to the tensor: shape (3,), (1,3), (1,1,3) and so on.
+    #    So the result on the rhs below is shape (1,128)
+	# 2) lhs of '==' is shape (k x 1) (column vector of string-char ords), rhs is (1 x num_classes).
+	# 3) The expression '==' of a column vec and a row vec is an idiom which generates one-hot encoded vectors. Example: np.array([1,2,3])[:,None] == np.array([1,2,3])[None,:]
+    return np.array(ascii[:,None] == np.arange(num_classes)[None, :], dtype=int)
 
 def one_hot_to_string(one_hot_matrix):
     return "".join([chr(np.argmax(c)) for c in one_hot_matrix])
 
 def build_dataset(filename, sequence_length, alphabet_size, max_lines=-1):
-    """Loads a text file, and turns each line into an encoded sequence."""
+    """
+    - Loads a text file, and turns each line into an encoded sequence.
+    - Each line is padded to @sequence_length with trailing space ' '
+    - Each padded/fixed-length line is converted to a matrix (n x num_classes), where n is the length of the string and num_classes is the length of the one-hot encodings (number of output classes).
+	- These matrices are loaded into @seqs, a matrix of size (n x num-lines x num_classes). Yes, annoyingly the examples are indexed via the center index ('ix', below).
+	- Returns: @seqs a tensor of size ( x num-lines x num_classes)
+	"""
     with open(filename) as f:
         content = f.readlines()
     content = content[:max_lines]
