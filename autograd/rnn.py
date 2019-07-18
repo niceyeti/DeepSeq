@@ -51,10 +51,16 @@ def stable_softmax(x):
     return expZ / sumZ
 
 def sigmoid(x):
-    return 0.5*(np.tanh(x) + 1.0)   # Output ranges from 0 to 1.
+    return 0.5 * (np.tanh(x) + 1.0)   # Output ranges from 0 to 1.
 
 def concat_and_multiply(weights, *args):
+    """
+    @weights: A weight matrix of size (m x n)
+    @args: A variable-length list of args
+    """
     cat_state = np.hstack(args + (np.ones((args[0].shape[0], 1)),))
+    print("Cat shape: {} {}\n weights: {} {} \n args: {} {}\n".format(cat_state.shape, cat_state, weights.shape, weights, args[0].shape, args[0]))
+    exit()
     return np.dot(cat_state, weights)
 
 ### Define recurrent neural net #######
@@ -62,20 +68,37 @@ def concat_and_multiply(weights, *args):
 def create_rnn_params(input_size, state_size, output_size,
                       param_scale=0.01, rs=npr.RandomState(0)):
     return {'init hiddens': rs.randn(1, state_size) * param_scale,
+            # W_hh and W_xh
             'change':       rs.randn(input_size + state_size + 1, state_size) * param_scale,
+            # W_hy
             'predict':      rs.randn(state_size + 1, output_size) * param_scale}
 
 def rnn_predict(params, inputs):
+    """
+    @params: params per create_rnn_params
+    @inputs: batched inputs of size (seqlen x numExamples x numClasses)
+    Returns: A list of output probabilities for the entire training set, whose entries are matrices of outputs for a timestep.
+    """
     def update_rnn(input, hiddens):
+        """
+        Calculate the hidden states 
+        @input: 
+        @hiddens: 
+        """
         return np.tanh(concat_and_multiply(params['change'], input, hiddens))
 
     def hiddens_to_output_probs(hiddens):
+        """
+        Given a set of matrix of hidden states for a timestep (basically a vertical slice of the examples),
+        returns output probabilities for all of those states.
+        @hiddens: The hidden states at timeslice t, of size (numExamples x hdim)
+        """
         output = concat_and_multiply(params['predict'], hiddens)
-        #print("output shape: {}".format(output.shape))
         return stable_logsoftmax(output)
         #return output - logsumexp(output, axis=1, keepdims=True)     # Normalize log-probs.
 
     num_sequences = inputs.shape[1]
+    # Initialize the (same) hidden state for every training sequence: size seqlen x hdim
     hiddens = np.repeat(params['init hiddens'], num_sequences, axis=0)
     output = [hiddens_to_output_probs(hiddens)]
 
@@ -85,6 +108,12 @@ def rnn_predict(params, inputs):
     return output
 
 def rnn_log_likelihood(params, inputs, targets):
+    """
+    @params: The params of the network
+    @inputs: Batched training input of size (seqlen x numExamples x numClasses)
+    @targets: Batched targets, which in this case are just the inputs.
+    """
+	#get the outputs for the entire batch, where @logprobs is size 
     logprobs = rnn_predict(params, inputs)
     loglik = 0.0
     num_time_steps, num_examples, _ = inputs.shape
@@ -94,7 +123,6 @@ def rnn_log_likelihood(params, inputs, targets):
 
 
 ### Dataset setup ##################
-
 def string_to_one_hot(string, num_classes):
     """
     Converts an ASCII string to a one-of-k encoding.
@@ -110,6 +138,7 @@ def string_to_one_hot(string, num_classes):
     return np.array(ascii[:,None] == np.arange(num_classes)[None, :], dtype=int)
 
 def one_hot_to_string(one_hot_matrix):
+    #Convert a matrix of logsoftmax output probs (or one-hots) to their corresponding char sequence, per each row max
     return "".join([chr(np.argmax(c)) for c in one_hot_matrix])
 
 def build_dataset(filename, sequence_length, alphabet_size, max_lines=-1):
@@ -118,7 +147,7 @@ def build_dataset(filename, sequence_length, alphabet_size, max_lines=-1):
     - Each line is padded to @sequence_length with trailing space ' '
     - Each padded/fixed-length line is converted to a matrix (n x num_classes), where n is the length of the string and num_classes is the length of the one-hot encodings (number of output classes).
 	- These matrices are loaded into @seqs, a matrix of size (n x num-lines x num_classes). Yes, annoyingly the examples are indexed via the center index ('ix', below).
-	- Returns: @seqs a tensor of size ( x num-lines x num_classes)
+	- Returns: @seqs a tensor of size (seqlen x num-lines x num_classes)
 	"""
     with open(filename) as f:
         content = f.readlines()
@@ -129,7 +158,7 @@ def build_dataset(filename, sequence_length, alphabet_size, max_lines=-1):
         padded_line = (line + " " * sequence_length)[:sequence_length]
         seqs[:, ix, :] = string_to_one_hot(padded_line, alphabet_size)
     return seqs
-
+####################################
 
 if __name__ == '__main__':
     num_chars = 128
@@ -158,10 +187,13 @@ if __name__ == '__main__':
         for t in range(logprobs.shape[1]):
             training_text  = one_hot_to_string(train_inputs[:,t,:])
             predicted_text = one_hot_to_string(logprobs[:,t,:])
-            print(training_text.replace('\n', ' ') + "|" +
-                  predicted_text.replace('\n', ' '))
+            print(training_text.replace('\n', ' ') + "|" + predicted_text.replace('\n', ' '))
 
     def training_loss(params, iter):
+        """
+        @params: The model parameters, per create_rnn_params
+        @iter: ?
+        """
         return -rnn_log_likelihood(params, train_inputs, train_inputs)
 
     def callback(weights, iter, gradient):
