@@ -53,43 +53,49 @@ def stable_softmax(x):
 def sigmoid(x):
     return 0.5 * (np.tanh(x) + 1.0)   # Output ranges from 0 to 1.
 
-def concat_and_multiply(weights, *args):
+def concat_and_multiply(weights, *args): # *args is a variable param list, as a tuple.
     """
+    Horizontally concatenates inputs (e.g., hiddens and x's, if needed), adds a vector of ones for the biases,
+    then multiplies by the weights. Note that this works because our 'change' weights are the hidden/input
+    matrices combined, which is a code idiom often used in vanilla rnn's. Hence their dot-product is
+    the same.
+
     @weights: A weight matrix of size (m x n)
-    @args: A variable-length list of args
+    @args: A variable-length list of args. For output prediction, this is the hidden states for a time slice.
+    For input+hidden state updates, this is (input, hiddens).
     """
+    #cats a set of constant ones to the inputs (args) to backpropagate the biases
     cat_state = np.hstack(args + (np.ones((args[0].shape[0], 1)),))
-    print("Cat shape: {} {}\n weights: {} {} \n args: {} {}\n".format(cat_state.shape, cat_state, weights.shape, weights, args[0].shape, args[0]))
-    exit()
+    #print("Cat shape: {} {}\n weights: {} {} \n args: {} {}\n".format(cat_state.shape, cat_state, weights.shape, weights, args[0].shape, args[0]))
     return np.dot(cat_state, weights)
 
 ### Define recurrent neural net #######
 
-def create_rnn_params(input_size, state_size, output_size,
+def create_rnn_params(xdim, hdim, odim,
                       param_scale=0.01, rs=npr.RandomState(0)):
-    return {'init hiddens': rs.randn(1, state_size) * param_scale,
+    return {'init hiddens': rs.randn(1, hdim) * param_scale,
             # W_hh and W_xh
-            'change':       rs.randn(input_size + state_size + 1, state_size) * param_scale,
+            'change':       rs.randn(xdim + hdim + 1, hdim) * param_scale,
             # W_hy
-            'predict':      rs.randn(state_size + 1, output_size) * param_scale}
+            'predict':      rs.randn(hdim + 1, odim) * param_scale}
 
 def rnn_predict(params, inputs):
     """
     @params: params per create_rnn_params
-    @inputs: batched inputs of size (seqlen x numExamples x numClasses)
+    @inputs: batched inputs of size (seqlen x numExamples x numClasses). The order makes sense if you check out the for loop with update_rnn; this shape gives iteration over time steps.
     Returns: A list of output probabilities for the entire training set, whose entries are matrices of outputs for a timestep.
     """
     def update_rnn(input, hiddens):
         """
-        Calculate the hidden states 
-        @input: 
-        @hiddens: 
+        Calculate the hidden states, given the inputs and previous hidden states at this time step.
+        @input: The stacked inputs at this time step.
+        @hiddens: The hiddens at this timestep.
         """
         return np.tanh(concat_and_multiply(params['change'], input, hiddens))
 
     def hiddens_to_output_probs(hiddens):
         """
-        Given a set of matrix of hidden states for a timestep (basically a vertical slice of the examples),
+        Given a set of matrix of hidden states for a timestep (basically a vertical slice of the examples, or a column of hidden states),
         returns output probabilities for all of those states.
         @hiddens: The hidden states at timeslice t, of size (numExamples x hdim)
         """
@@ -98,11 +104,13 @@ def rnn_predict(params, inputs):
         #return output - logsumexp(output, axis=1, keepdims=True)     # Normalize log-probs.
 
     num_sequences = inputs.shape[1]
-    # Initialize the (same) hidden state for every training sequence: size seqlen x hdim
+    # Initializes the (same) hidden state for every training sequence: size (numExamples x hdim)
     hiddens = np.repeat(params['init hiddens'], num_sequences, axis=0)
+    print("hiddens: {}".format(hiddens.shape))
     output = [hiddens_to_output_probs(hiddens)]
 
-    for input in inputs:  # Iterate over time steps.
+    # Iterate over time steps. In numpy, the for-iteration is over a tensor's first axis: 'for x in M', where M.shape=(4,6,7,8), would iterate 4 matrices of size (6,7,8)
+    for input in inputs:
         hiddens = update_rnn(input, hiddens)
         output.append(hiddens_to_output_probs(hiddens))
     return output
@@ -178,9 +186,9 @@ if __name__ == '__main__':
     train_inputs = build_dataset(text_filename, sequence_length=seqLen,
                                  alphabet_size=num_chars, max_lines=maxLines)
 
-    init_params = create_rnn_params(input_size=xDim, output_size=outputDim,
-                                    state_size=hDim, param_scale=paramScale)
-
+    init_params = create_rnn_params(xdim=xDim, odim=outputDim,
+                                    hdim=hDim, param_scale=paramScale)
+    print("Training data size: (seqlen x numexamples x classes) -> {}".format(train_inputs.shape))
     def print_training_prediction(weights):
         print("Training text                         Predicted text")
         logprobs = np.asarray(rnn_predict(weights, train_inputs))
@@ -198,6 +206,7 @@ if __name__ == '__main__':
 
     def callback(weights, iter, gradient):
         if iter % 10 == 0:
+            print(type(iter))
             curLoss = training_loss(weights, 0)
             losses.append(curLoss)
             print("Iteration", iter, "Train loss:", curLoss)
