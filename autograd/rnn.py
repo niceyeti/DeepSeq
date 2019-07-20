@@ -25,29 +25,32 @@ import matplotlib.pyplot as plt
 ### Helper functions #################
 
 def logsumexp(x):
+    """
+    Computes logsumexp for a matrix whose rows represent output probs. This is a hack to run the code,
+    and would need to be refactored to support other input shapes.
+    """
     a = x.max(axis=1).reshape(x.shape[0], 1) # get max of each row, reshape result to match @x
-    #print("a: "+str(a))
+    #shift all rows down by their max
     z = x - a
     expZ = np.exp(z)
-    #print("z: "+str(z))
     sumZ = np.sum(expZ, axis=1).reshape(x.shape[0], 1)
-    #print("sum z: "+str(sumZ))
     return a + np.log(sumZ)
 
-#@x: An m x n matrix
 def stable_logsoftmax(x):
+    """
+    Calculates logsoftmax over a set of output probabilities from one time slice of the training data.
+    Or in English, given a matrix whose rows are output probabilities for a single time step, returns
+    log-softmax of every row. See log-softmax lit for an explanation of how the math reduces to x - logsumexp(x).
+    @x: An m x n matrix, m=numExamples n=numclasses. 
+    """
     return x - logsumexp(x)
 
 #@x: An m x n matrix
 def stable_softmax(x):
     a = x.max(axis=1).reshape(x.shape[0], 1) # get max of each row, reshape result to match @x
-    #print("a: "+str(a))
     z = x - a
-    #print("z: "+str(z))
     sumZ = np.sum(z, axis=1).reshape(x.shape[0], 1)
-    #print("sum z: "+str(sumZ))
     expZ = np.exp(z)
-    #print("expZ: "+str(expZ))
     return expZ / sumZ
 
 def sigmoid(x):
@@ -74,7 +77,7 @@ def concat_and_multiply(weights, *args): # *args is a variable param list, as a 
 def create_rnn_params(xdim, hdim, odim,
                       param_scale=0.01, rs=npr.RandomState(0)):
     return {'init hiddens': rs.randn(1, hdim) * param_scale,
-            # W_hh and W_xh
+            # W_hh and W_xh, concatenated
             'change':       rs.randn(xdim + hdim + 1, hdim) * param_scale,
             # W_hy
             'predict':      rs.randn(hdim + 1, odim) * param_scale}
@@ -83,7 +86,7 @@ def rnn_predict(params, inputs):
     """
     @params: params per create_rnn_params
     @inputs: batched inputs of size (seqlen x numExamples x numClasses). The order makes sense if you check out the for loop with update_rnn; this shape gives iteration over time steps.
-    Returns: A list of output probabilities for the entire training set, whose entries are matrices of outputs for a timestep.
+    Returns: A list of output probabilities for the entire training set, whose entries are matrices of outputs for a single timestep.
     """
     def update_rnn(input, hiddens):
         """
@@ -97,16 +100,17 @@ def rnn_predict(params, inputs):
         """
         Given a set of matrix of hidden states for a timestep (basically a vertical slice of the examples, or a column of hidden states),
         returns output probabilities for all of those states.
-        @hiddens: The hidden states at timeslice t, of size (numExamples x hdim)
+        @hiddens: The hidden states at timeslice t, of size (numExamples x hdim) where probs are over the hdim axis
         """
         output = concat_and_multiply(params['predict'], hiddens)
+        #Hack fix for source example
         return stable_logsoftmax(output)
         #return output - logsumexp(output, axis=1, keepdims=True)     # Normalize log-probs.
 
     num_sequences = inputs.shape[1]
     # Initializes the (same) hidden state for every training sequence: size (numExamples x hdim)
     hiddens = np.repeat(params['init hiddens'], num_sequences, axis=0)
-    print("hiddens: {}".format(hiddens.shape))
+    #print("hiddens: {}".format(hiddens.shape))
     output = [hiddens_to_output_probs(hiddens)]
 
     # Iterate over time steps. In numpy, the for-iteration is over a tensor's first axis: 'for x in M', where M.shape=(4,6,7,8), would iterate 4 matrices of size (6,7,8)
