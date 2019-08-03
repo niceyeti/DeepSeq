@@ -13,6 +13,7 @@ has a fixed length.
 from __future__ import absolute_import
 from __future__ import print_function
 from builtins import range
+import random
 import autograd.numpy as np
 import autograd.numpy.random as npr
 from autograd import grad
@@ -23,6 +24,11 @@ from autograd.misc.optimizers import adam
 import matplotlib.pyplot as plt
 
 ### Helper functions #################
+
+def plotFoo(ys):
+    #Plot any sequence of f(x)
+    plt.plot([x for x in range(len(ys))], ys)
+    plt.show()
 
 def logsumexp(x):
     """
@@ -96,30 +102,30 @@ def rnn_predict(params, inputs):
         """
         return np.tanh(concat_and_multiply(params['change'], input, hiddens))
 
-    def hiddens_to_output_probs(hiddens):
+    def hiddens_to_output(hiddens):
         """
         Given a set of matrix of hidden states for a timestep (basically a vertical slice of the examples, a column of hidden states for a specific time step),
         returns output probabilities for all of those states.
         @hiddens: The hidden states at timeslice t, of size (numExamples x hdim). Output probs are over the hdim axis
         """
-        output = concat_and_multiply(params['predict'], hiddens)
+        return concat_and_multiply(params['predict'], hiddens)
         #Hack fix for source example
-        return stable_logsoftmax(output)
+        #return stable_logsoftmax(output)
         #return output - logsumexp(output, axis=1, keepdims=True)     # Normalize log-probs.
 
     num_sequences = inputs.shape[1]
     # Initializes the (same) hidden state for every training sequence: size (numExamples x hdim)
     hiddens = np.repeat(params['init hiddens'], num_sequences, axis=0)
     #print("hiddens: {}".format(hiddens.shape))
-    output = [hiddens_to_output_probs(hiddens)]
+    output = [hiddens_to_output(hiddens)]
 
     # Iterate over time steps. In numpy, the for-iteration is over a tensor's first axis: 'for x in M', where M.shape=(4,6,7,8), would iterate 4 matrices of size (6,7,8)
     for input in inputs:
         hiddens = update_rnn(input, hiddens)
-        output.append(hiddens_to_output_probs(hiddens))
+        output.append(hiddens_to_output(hiddens))
     return output
 
-def rnn_log_likelihood(params, inputs, targets):
+def rnn_l2_loss(params, inputs, targets):
     """
     For a batch of training sequences, returns the loss over the entire set, and for all time steps.
     The loss if the log-likelihood averaged over all training examples (time steps x num-sequences).
@@ -128,12 +134,12 @@ def rnn_log_likelihood(params, inputs, targets):
     @targets: Batched targets, which in this case are just the inputs.
     """
 	#get the outputs for the entire batch, where @logprobs is size 
-    logprobs = rnn_predict(params, inputs)
-    loglik = 0.0
+    preds = rnn_predict(params, inputs)
+    loss = 0.0
     num_time_steps, num_examples, _ = inputs.shape
     for t in range(num_time_steps):
-        loglik += np.sum(logprobs[t] * targets[t])
-    return loglik / (num_time_steps * num_examples)
+        loss += np.sum( (preds[t] - targets[t]) ** 2 )
+    return loss / (num_time_steps * num_examples)
 
 ### Dataset setup ##################
 def string_to_one_hot(string, num_classes):
@@ -171,15 +177,41 @@ def build_dataset(filename, sequence_length, alphabet_size, max_lines=-1):
         padded_line = (line + " " * sequence_length)[:sequence_length]
         seqs[:, ix, :] = string_to_one_hot(padded_line, alphabet_size)
     return seqs
+
+def build_real_valued_dataset(sequence_length, output_channels, batch_size=30):
+    """
+    Returns a dataset of size (seqlen x batch_size x num_channels), where each training sequence
+    is a sine function phase shifted by some random number of radians. The unusual matrix shape is
+    a code idiom often used in rnn batching/training.
+    FUTURE: Multichannel, multiple functions: channel 1 = sine, channel 2 = cosine.
+    FUTURE: Gaussian noise
+    """
+    #Each sequence is one complete sine wave (2Pi) scaled to fit within @sequence_length in discrete steps
+    data = np.zeros((sequence_length, batch_size, output_channels))
+    for i in range(batch_size):
+        phaseShift = random.random() * 2 * np.pi
+        wave = [np.sin(i / (2*np.pi) + phaseShift) for i in range(sequence_length)]
+        #FUTURE: multichannel input/output. Just append more waves: [wave1, wave2, wave2...]
+        train = np.array([wave])
+        #print("train.T: {} {}".format(train.T.shape, train.T))
+        #channels = train.T.reshape((sequence_length, 1, output_channels))
+        #channels = np.array([wave,wave2]).reshape(sequence_length,1,output_channels)
+        #print("Channels shape: {}\n channels {}".format(channels.shape, channels))
+        #plotFoo(wave)
+        data[:,i,:] = train.T
+        #print("data[:,{},:]: {}".format(i,data[:,i,:]))
+
+    #print("data[:,0,:]: {}".format(data[:,0,:]))
+    return data
+
 ####################################
 
 if __name__ == '__main__':
-    num_chars = 128
     losses = []
-    seqLen = 30
-    maxLines = 60
-    xDim = 128
-    outputDim = xDim
+    seqLen = 60
+    batchSize = 40
+    xDim = 1
+    outputChannels = xDim
     hDim = 40
     paramScale = 0.01
     #training params
@@ -187,15 +219,12 @@ if __name__ == '__main__':
     adamStepSize = 0.1
 
     # Learn to predict our own source code.
-    text_filename = join(dirname(__file__), __file__)
-    train_inputs = build_dataset(text_filename, sequence_length=seqLen,
-                                 alphabet_size=num_chars, max_lines=maxLines)
-
-    init_params = create_rnn_params(xdim=xDim, odim=outputDim,
-                                    hdim=hDim, param_scale=paramScale)
-    print("Training data size: (seqlen x numexamples x classes) -> {}".format(train_inputs.shape))
+    train_inputs = build_real_valued_dataset(sequence_length=seqLen,output_channels=1, batch_size=batchSize)
+    print("Training shape: {}".format(train_inputs.shape))
+    init_params = create_rnn_params(xdim=xDim, odim=outputChannels, hdim=hDim, param_scale=paramScale)
+    print("Training data size: (seqlen x numexamples x output channels) -> {}".format(train_inputs.shape))
     def print_training_prediction(weights):
-        print("Training text                         Predicted text")
+        print("Training                         Predicted")
         logprobs = np.asarray(rnn_predict(weights, train_inputs))
         for t in range(logprobs.shape[1]):
             training_text  = one_hot_to_string(train_inputs[:,t,:])
@@ -207,31 +236,29 @@ if __name__ == '__main__':
         @params: The model parameters, per create_rnn_params
         @iter: ?
         """
-        return -rnn_log_likelihood(params, train_inputs, train_inputs)
+        return rnn_l2_loss(params, train_inputs, train_inputs)
 
     def callback(weights, iter, gradient):
         if iter % 10 == 0:
-            print(type(iter))
             curLoss = training_loss(weights, 0)
             losses.append(curLoss)
             print("Iteration", iter, "Train loss:", curLoss)
-            print_training_prediction(weights)
+            #print_training_prediction(weights)
 
     # Build gradient of loss function using autograd.
     training_loss_grad = grad(training_loss)
 
     print("Training RNN...")
-    trained_params = adam(training_loss_grad, init_params, step_size=adamStepSize,
-                          num_iters=numIters, callback=callback)
+    trained_params = adam(training_loss_grad, init_params, step_size=adamStepSize, num_iters=numIters, callback=callback)
 
     #plot the losses
     plt.plot([x for x in range(len(losses))], losses)
     plt.title("Losses")
     plt.show()
 
-    print("\nGenerating text from RNN...")
-    num_letters = 30
-    for t in range(20):
+    print("\nGenerating signals from RNN...")
+    num_signals = 2
+    for t in range(seqLen):
         text = ""
         for i in range(num_letters):
             seqs = string_to_one_hot(text, num_chars)[:, np.newaxis, :]
