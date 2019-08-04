@@ -84,6 +84,12 @@ def create_rnn_params(xdim, hdim, odim,
 
 def rnn_predict(params, inputs):
     """
+    Returns batched output probabilities for all of @input.
+    NOTE: Something that comes up with sequential/discrete rnns is how to map @inputs to targets. Notice below
+    that this model backpropagates all the way to the initial hidden states without an input (essentially at
+    t = -1). Hence, this uses the START idiom, and represents a model incorporate START information: the distribution
+    of the output before any input is given.
+
     @params: params per create_rnn_params
     @inputs: batched inputs of size (seqlen x numExamples x numClasses). The order makes sense if you check out the for loop with update_rnn; this shape gives iteration over time steps.
     Returns: A list of output probabilities for the entire training set, whose entries are matrices of outputs for a single timestep.
@@ -122,7 +128,7 @@ def rnn_predict(params, inputs):
 def rnn_log_likelihood(params, inputs, targets):
     """
     For a batch of training sequences, returns the loss over the entire set, and for all time steps.
-    The loss if the log-likelihood averaged over all training examples (time steps x num-sequences).
+    The loss is the log-likelihood averaged over all training examples (time steps x num-sequences).
     @params: The params of the network
     @inputs: Batched training input of size (seqlen x numExamples x numClasses)
     @targets: Batched targets, which in this case are just the inputs.
@@ -205,6 +211,7 @@ if __name__ == '__main__':
     def training_loss(params, iter):
         """
         @params: The model parameters, per create_rnn_params
+        @train_inputs: Batched training input of size (seqlen x numExamples x numClasses)
         @iter: ?
         """
         return -rnn_log_likelihood(params, train_inputs, train_inputs)
