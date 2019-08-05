@@ -294,7 +294,7 @@ if __name__ == '__main__':
 
     print("\nGenerating signals from RNN...")
     num_signals = 1
-    num_steps = seqLen * 2
+    num_steps = seqLen * 10
     #Initialize some random starting points, [0,2Pi], of shape (1 x numExamples x numChannels) where 1 == seqLen during generation
     inputs = np.random.random((1,num_signals,1)) * 2 - 1
     hidden = np.random.random((num_signals,hDim)) * 0.2  - 0.1  #(numExamples x hdim)
