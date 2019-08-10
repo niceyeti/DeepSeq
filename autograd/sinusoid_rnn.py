@@ -22,13 +22,40 @@ from autograd import grad
 from os.path import dirname, join
 from autograd.misc.optimizers import adam
 import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+
 
 ### Helper functions #################
 
-def plotFoo(ys):
+def plotLine_Animated(ys, intervalMs=150):
+    fig, ax = plt.subplots()
+
+    #x = np.arange(0, 2*np.pi, 0.01)
+    xs = [x for x in range(len(ys))]
+    line, = ax.plot(xs,ys)
+
+    def init():  # only required for blitting to give a clean slate.
+        line.set_ydata([np.nan] * len(xs))
+        return line,
+
+    def animate(i):
+        line.set_data(xs[0:i], ys[0:i])
+        #line.set_ydata(ys[i])  # update the data.
+        return line,
+
+    ani = animation.FuncAnimation(fig, animate, init_func=init, interval=intervalMs, blit=True, save_count=50)
+    plt.show()
+
+def plotLine(ys):
     #Plot any sequence of f(x)
     plt.plot([x for x in range(len(ys))], ys)
     plt.show()
+
+def init():  # only required for blitting to give a clean slate.
+    line.set_ydata([np.nan] * len(x))
+    return line,
+
+
 
 def logsumexp(x):
     """
@@ -242,6 +269,7 @@ def build_sinusoidal_dataset(sequence_length, points_per_period, output_channels
 
 if __name__ == '__main__':
     losses = []
+
     #data points per complete sinusoid period
     points_per_period = 30
     seqLen = 1 * points_per_period
@@ -314,7 +342,8 @@ if __name__ == '__main__':
     sigNumber=0
     channel=0
     sig1 = [output[sigNumber, channel] for output in outputs]
-    plotFoo(sig1)
+    plotLine(sig1)
+    plotLine_Animated(sig1, intervalMs=100)
 
     """
     print("\nGenerating signals from RNN...")
