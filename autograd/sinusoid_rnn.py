@@ -43,7 +43,8 @@ def plotLine_Animated(ys, intervalMs=150):
         #line.set_ydata(ys[i])  # update the data.
         return line,
 
-    ani = animation.FuncAnimation(fig, animate, init_func=init, interval=intervalMs, blit=True, save_count=50)
+    ani = animation.FuncAnimation(fig, animate, init_func=init, interval=intervalMs, blit=True, save_count=200)
+    ani.save("animation.mp4")
     plt.show()
 
 def plotLine(ys):
@@ -343,7 +344,7 @@ if __name__ == '__main__':
     channel=0
     sig1 = [output[sigNumber, channel] for output in outputs]
     plotLine(sig1)
-    plotLine_Animated(sig1, intervalMs=100)
+    plotLine_Animated(sig1, intervalMs=80)
 
     """
     print("\nGenerating signals from RNN...")
