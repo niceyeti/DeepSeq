@@ -1,0 +1,90 @@
+Vulnerabilities attacks assumptions, not computers.
+
+Top code security threats:
+
+1) Buffer overflows
+	Example with retc and eip
+	Target: knock out a return address, function call, or other control info
+
+	This is a program which replaces current process with /bin/sh:
+		\x31\xc0\x31\xdb\xb0\x06\xcd\x80\x53\x68/tty\x68/dev\x89\xe3\x31\xc9\x66\xb9\x12\x27\xb0\x05\xcd\x80\x31\xc0\x50\x68//sh\x68/bin\x89\xe3\x50\x53\x89\xe1\x99\xb0\x0b\xcd\x80
+
+	Attacks and recon require code or process access; can be done through open source research.
+	Example: process scanning.
+
+	Mitigation:
+	1) ASLR, DNP/NX, Canary methods
+	Important: Each of these has a means of bypass
+	2) Process capability scanning (AppArmor)
+
+	DEP: Marks code regions of memory where code is allowed to execute.
+	
+
+
+
+
+2) Cross site scripting, CSRF
+ Basic js code injection
+
+3) Information exposure:
+	1) history command, environment, failure to conceal password text
+	leaky logs
+
+6) Upload of file of untrusted type:
+	User uploads a php file using a picture uploader, persisting the file to a persistent directory.
+	Server will then execute that file freely, and whatever code it contains.
+
+4) Out of bounds reads:
+	Example: printing out environment, dumping stack, 
+	-A ping/pong style program immediately returns a message of some client-provided size to indicate its liveness. (Heartbleed)
+
+5) Improper deserialization:
+	A serialized resource from some client request or resource on disk is crafted to redirect deserialization to a shell or other path
+
+5) Improper input validation
+	 A logic/programmatic risk
+		1) User inputs amount of money to transfer in some transaction; their input is not checked for negative values.
+		2) Other basic evil-tester scenarios
+
+6) SQL injection
+	What it sounds like
+
+7) Uncontrolled resource allocation:
+	-Threads, sockets, files, other service endpoints and resources that are overly friendly, unbounded
+	-Targets: known costly db queries
+	Risk: These can overwhelm a system, bring down a system (denial of service, even system crash)
+
+	Mitigation: resource limits, like those provided by docker and in-code limits.
+
+8) Arbitrary code execution:
+	Server endpoint:
+		serve_request(user_input):
+			_server.respond("echo 'hello $user_input'")
+
+	Attack: set user_input to arbitrary shell commands:
+		user_input := "$(some arbitrary commands)
+		user_input := "$(print history, environment variables, other user data)"
+
+Horizon risks:
+	Our trust model relies on security assumptions of operator control centers. That being said,
+	cross site scripting is a risk from both user input and log info or other strings on disk.
+	Resource consumption attacks are also possible, without docker container limits
+	Running as root is a huge problem: anything that takes out such a container has root shell.
+	Information exposure: confidentiality of operator center data is critical.
+
+Mitigation:
+	-implement docker security best practices, follow typical checklists
+	-maintain high code review + clean code standards
+	
+
+
+
+
+
+
+
+
+
+
+
+
