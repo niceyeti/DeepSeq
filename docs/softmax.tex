@@ -1,0 +1,62 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+
+\title{Softmax}
+\author{Jesse Waite}
+\date{February 2020}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+The softmax function comes with a number of tricks for simplifying its expression and various calculation.
+
+
+
+\section{The Likelihood Function Loss and Gradient Derivation (easy version)}
+
+For the multiclass prediction problem of k classes and n examples, the likelihood function is defined as follows. In the expression, the exponent $y_{n,k}$ within the inner $\prod$ is defined as 1.0 for the correct class/label, and zero otherwise. All the incorrect labels for an example thus go to 1.0, and only the predicted probability of the correct label contributes to the overall likelihood function. The likelihood is a multi-class generalization of the Bernoulli likelihood function of a set of experiments results in success/failure.
+\\ \\
+
+$L(W,X) = \prod_{n} \prod_{k} \Big(\frac{e^{w_{k} \cdot x_{n}}}{\sum_{j}^{k} e^{w_{j} \cdot x_{n}}}\Big)^{y_{n,k}}$ 
+\\ \\
+
+We wish to maximize the likelihood function, but the math simply works out better if we try to \textit{minimize} the negative log-likelihood instead. This is valid since $log()$ is a monotonic increasing function. We'll use $J(W,X)$ for the negative log-likelihood.
+\\ \\
+
+$J(W,X) = -1 * log(L(W,X)) $ \\
+
+$J(W,X) = - \sum_{n} \sum_{k} y_{n,k}\Big(log(e^{w_{k} \cdot x_{n}}) - log\big(\sum_{j}^{k} e^{w_{j} \cdot x_{n}}\big)\Big)$  \\
+
+$J(W,X) = - \sum_{n} \sum_{k} y_{n,k}\Big(w_{k} \cdot x_{n} - log\big(\sum_{j}^{k} e^{w_{j} \cdot x_{n}}\big)\Big)$ \\
+
+$ \boxed{ J(W,X) = - \sum_{n} \sum_{k} y_{n,k}\big(w_{k} \cdot x_{n}\big) + \sum_{n} \sum_{k} y_{n,k} log\big(\sum_{j}^{k} e^{w_{j} \cdot x_{n}}\big) }$ \\ \\
+
+But now notice that in the right-hand sum (over n, k) that $\sum_{k} y_{n,k}$ is 1.0, since it is a one-hot encoded vector. Likewise, nothing inside the $log(\dot)$ depends on the index $k$. Using this, the log-likelihood simplifies to: \\
+
+$ \boxed{ J(W,X) = - \sum_{n} \sum_{k} y_{n,k}\big(w_{k} \cdot x_{n}\big) + \sum_{n} log\big(\sum_{j}^{k} e^{w_{j} \cdot x_{n}}\big) }$ \\
+
+
+\section{Gradient calculation $\frac{\delta J}{\delta W}$}
+
+The gradient we're after is $\frac{\delta J}{\delta W}$, the derivative of $J(W,X)$ with respect to the weights $W$.
+Note that in these expressions, both $w$ and $x$ are vectors, not scalars. To start, take the derivative w.r.t. $w_j$, the weight vector for class $j$.
+
+$\frac{\delta J}{\delta w_{j}} = - \sum_{n} y_{n,j} x_{n} + \sum_{n} \frac{1}{\sum_{i}^{k} e^{w_{i} \cdot x_{n}}} * e^{w_j \cdot x_{n}} * x_{n}  $ \\ \\
+
+$\frac{\delta J}{\delta w_{j}} = - \sum_{n} y_{n,j} x_{n} + \sum_{n} x_{n} \frac{e^{w_j \cdot x_{n}}} {\sum_{i}^{k} e^{w_{i} \cdot x_{n}}}  $ \\ \\
+
+$\frac{\delta J}{\delta w_{j}} = - \sum_{n} y_{n,j} x_{n} + \sum_{n} \frac{e^{w_j \cdot x_{n}}} {\sum_{i}^{k} e^{w_{i} \cdot x_{n}}} x_{n} $ \\ \\
+
+
+$\frac{\delta J}{\delta w_{j}} = \sum_{n} x_{n} \big(\frac{e^{w_j \cdot x_{n}}} {\sum_{i}^{k} e^{w_{i} \cdot x_{n}}} - y_{n,j}\big) $ \\ \\
+
+$\frac{\delta J}{\delta w_{j}} = \sum_{n} x_{n} \big(s_{j} - y_{n,j}\big) $ \\ \\
+
+Where $s_{j}$ is the softmax function $p(y_{j}|x)$, and $y_{n,j}$ is 1 if $k == j$, 0 otherwise.
+
+
+\end{document}
+
