@@ -1,6 +1,7 @@
 \documentclass{article}
 \usepackage[utf8]{inputenc}
 \usepackage{amsmath}
+\usepackage{amsfonts}
 
 \title{Softmax}
 \author{Jesse Waite}
@@ -17,13 +18,13 @@ The softmax function comes with a number of tricks for simplifying its expressio
 
 \section{The Likelihood Function Loss and Gradient Derivation (easy version)}
 
-For the multiclass prediction problem of k classes and n examples, the likelihood function is defined as follows. In the expression, the exponent $y_{n,k}$ within the inner $\prod$ is defined as 1.0 for the correct class/label, and zero otherwise. All the incorrect labels for an example thus go to 1.0, and only the predicted probability of the correct label contributes to the overall likelihood function. The likelihood is a multi-class generalization of the Bernoulli likelihood function of a set of experiments results in success/failure.
+For the multiclass prediction problem of k classes and n examples, the likelihood function is defined as follows. In the expression, the exponent $y_{n,k}$ within the inner $\prod$ is defined as 1.0 for the correct class/label, and zero otherwise. All the incorrect labels for an example thus go to 1.0, and only the predicted probability of the correct label contributes to the overall likelihood. The likelihood is a multi-class generalization of the Bernoulli likelihood function of a set of experiments results in success/failure.
 \\ \\
 
 $L(W,X) = \prod_{n} \prod_{k} \Big(\frac{e^{w_{k} \cdot x_{n}}}{\sum_{j}^{k} e^{w_{j} \cdot x_{n}}}\Big)^{y_{n,k}}$ 
 \\ \\
 
-We wish to maximize the likelihood function, but the math simply works out better if we try to \textit{minimize} the negative log-likelihood instead. This is valid since $log()$ is a monotonic increasing function. We'll use $J(W,X)$ for the negative log-likelihood.
+We wish to maximize the likelihood function, but the math works out better if we try to \textit{minimize} the negative log-likelihood instead. This is valid since $log()$ is a monotonically increasing function. We'll use $J(W,X)$ for the negative log-likelihood.
 \\ \\
 
 $J(W,X) = -1 * log(L(W,X)) $ \\
@@ -34,15 +35,15 @@ $J(W,X) = - \sum_{n} \sum_{k} y_{n,k}\Big(w_{k} \cdot x_{n} - log\big(\sum_{j}^{
 
 $ \boxed{ J(W,X) = - \sum_{n} \sum_{k} y_{n,k}\big(w_{k} \cdot x_{n}\big) + \sum_{n} \sum_{k} y_{n,k} log\big(\sum_{j}^{k} e^{w_{j} \cdot x_{n}}\big) }$ \\ \\
 
-But now notice that in the right-hand sum (over n, k) that $\sum_{k} y_{n,k}$ is 1.0, since it is a one-hot encoded vector. Likewise, nothing inside the $log(\dot)$ depends on the index $k$. Using this, the log-likelihood simplifies to: \\
+Notice that in the right-hand sum (over n, k) that $\sum_{k} y_{n,k}$ is 1.0, since it is a one-hot encoded vector. Likewise, nothing inside the $log(\dot)$ depends on the index $k$. Based on this, the log-likelihood simplifies to: \\
 
 $ \boxed{ J(W,X) = - \sum_{n} \sum_{k} y_{n,k}\big(w_{k} \cdot x_{n}\big) + \sum_{n} log\big(\sum_{j}^{k} e^{w_{j} \cdot x_{n}}\big) }$ \\
 
 
 \section{Gradient calculation $\frac{\delta J}{\delta W}$}
 
-The gradient we're after is $\frac{\delta J}{\delta W}$, the derivative of $J(W,X)$ with respect to the weights $W$.
-Note that in these expressions, both $w$ and $x$ are vectors, not scalars. To start, take the derivative w.r.t. $w_j$, the weight vector for class $j$.
+The gradient we desire is $\frac{\delta J}{\delta W}$, the derivative of $J(W,X)$ with respect to the weights $W$.
+Note that in these expressions, $w$ and $x$ are vectors, whereas $y$ and $s$ are scalars. To start, take the derivative w.r.t. $w_j$, the weight vector for class $j$.
 
 $\frac{\delta J}{\delta w_{j}} = - \sum_{n} y_{n,j} x_{n} + \sum_{n} \frac{1}{\sum_{i}^{k} e^{w_{i} \cdot x_{n}}} * e^{w_j \cdot x_{n}} * x_{n}  $ \\ \\
 
@@ -56,6 +57,40 @@ $\frac{\delta J}{\delta w_{j}} = \sum_{n} x_{n} \big(\frac{e^{w_j \cdot x_{n}}} 
 $\frac{\delta J}{\delta w_{j}} = \sum_{n} x_{n} \big(s_{j} - y_{n,j}\big) $ \\ \\
 
 Where $s_{j}$ is the softmax function $p(y_{j}|x)$, and $y_{n,j}$ is 1 if $k == j$, 0 otherwise.
+$\frac{\delta J}{\delta w_{j}}$ is for a single class vector $w_{j}$. The gradient of the loss function with respect to the full weight matrix $\frac{\delta J}{\delta W}$ is then: \\
+
+$\boxed{ \frac{\delta J}{\delta W} = \sum_{n} x_{n} \otimes \big(s - y^{*}\big) }$ \\
+
+Where $s$ is our vector of output probabilities and $y$ is a one-hot encoding of class labels. But compactness is practical to oneself, and confounding to one's audience. So for a quick review, the outer product of two vectors $a \in \mathbb{R}^{n}$ and $b \in \mathbb{R}^{m}$ is a matrix of dimension $n \times m$ whose rows are the vector-scalar products of $a$ and each (scalar) element $b_{i}$ of $b$: \\ \\
+$C_{n \times m} &= \begin{bmatrix} \\
+         a \odot b_{1} \\
+         a \odot b_{2} \\
+          \vdots \\
+         a \odot b_{m}
+         \end{bmatrix}
+$ \\
+
+Therefore, the outer product in $\frac{\delta J}{\delta W}$ is:
+
+$C_{n \times n} &= \begin{bmatrix} \\
+         x \odot (s_{1} - y_{1}) \\
+         x \odot (s_{2} - y_{2}) \\
+          \vdots \\
+         x \odot (s_{n} - y_{n})
+         \end{bmatrix}
+$ \\
+
+The point of belaboring this expression is that we can observe important properties by being this explicit. Only one of $y_{i}$ is 1, and all the rest are 0. So for the incorrect labels, the gradient of the loss with respect to that weight vector is the input multiplied by the prediction for that (incorrect) class, $x_{n} \odot s_{j}$. Therefore, the larger our prediction for an incorrect label, the larger and more positive the weight update for that example. However for the correct class, we get the opposite: $x_{n} \odot (s_{j} - 1.0)$, meaning that if our prediction for the correct label is small, then the update for this example is larger and more negative. So the closer any of our predictions are to their target label values of either 0.0 or 1.0, the smaller the magnitude of the update. The positivity/negative relationship is reversed in gradient descent since we proceed in the \textit{opposite} direction of these updates. It might actually be clearer to include that negation above to make the weight-update behavior clearer, but if you've read this far, you grasp it anyway.
+
+Further, recall that the softmax function tends to exaggerate the probability of the max value of some vector. This is desirable discrimination behavior for any classifier, however, note that the weight corrections will be exaggerated via these scalar probabilities $s$ because they result from multiplication with them. I don't know what this means in depth, but it means that incorrect predictions will have very large contribution to the gradient. Knowing this, you might even exploit input data clustering in initial stages of gradient descent, but its just hacking. The point is just that the value of each example to gradient is highly uneven, and you might even design training methods to exploit this behavior. It also helps inform regularization strategies, most notably because if the data are linearly separable, then the gradient updates will proceed forever, and the magnitude of the weights will grow without bound.
+
+
+Having derived $\frac{\delta J}{\delta W}$, one epoch of gradient descent is given by subtracting this value (to proceed in the direction opposite of the gradient) multiplied by our learning rate $\alpha$: \\
+
+$ W = W - \alpha \frac{\delta J}{\delta W}$
+
+
+
 
 
 \end{document}
