@@ -3,7 +3,7 @@
 \usepackage{amsmath}
 \usepackage{amsfonts}
 
-\title{Softmax}
+\title{A lurid account of the time X crossed Smigh: Calculating textbook softmax derivatives}
 \author{Jesse Waite}
 \date{February 2020}
 
@@ -12,14 +12,11 @@
 \maketitle
 
 \section{Introduction}
-The softmax function comes with a number of tricks for simplifying its expression and various calculation.
-
-
+The softmax function is a vector-in, vector-out function. This makes its derivatives a bit messy, but there are a number of tricks for simplifying its expression and various gradient calculations.
 
 \section{The Likelihood Function Loss and Gradient Derivation (easy version)}
 
-For the multiclass prediction problem of k classes and n examples, the likelihood function is defined as follows. In the expression, the exponent $y_{n,k}$ within the inner $\prod$ is defined as 1.0 for the correct class/label, and zero otherwise. All the incorrect labels for an example thus go to 1.0, and only the predicted probability of the correct label contributes to the overall likelihood. The likelihood is a multi-class generalization of the Bernoulli likelihood function of a set of experiments results in success/failure.
-\\ \\
+For the multiclass prediction problem of k classes and n examples, the likelihood function is defined below. The exponent $y_{n,k}$ within the inner $\prod $ is defined as 1.0 for the correct class/label, and zero otherwise. All the incorrect labels for an example thus go to 1.0, and only the predicted probability of the correct label contributes to the overall likelihood. The likelihood is a multi-class generalization of the Bernoulli likelihood function of a set of experiments resulting in success/failure. \\ \\
 
 $L(W,X) = \prod_{n} \prod_{k} \Big(\frac{e^{w_{k} \cdot x_{n}}}{\sum_{j}^{k} e^{w_{j} \cdot x_{n}}}\Big)^{y_{n,k}}$ 
 \\ \\
@@ -43,7 +40,7 @@ $ \boxed{ J(W,X) = - \sum_{n} \sum_{k} y_{n,k}\big(w_{k} \cdot x_{n}\big) + \sum
 \section{Gradient calculation $\frac{\delta J}{\delta W}$}
 
 The gradient we desire is $\frac{\delta J}{\delta W}$, the derivative of $J(W,X)$ with respect to the weights $W$.
-Note that in these expressions, $w$ and $x$ are vectors, whereas $y$ and $s$ are scalars. To start, take the derivative w.r.t. $w_j$, the weight vector for class $j$.
+In these expressions, $w$ and $x$ are vectors, whereas $y$ and $s$ are scalars. To start, take the derivative w.r.t. $w_j$, the weight vector for class $j$.
 
 $\frac{\delta J}{\delta w_{j}} = - \sum_{n} y_{n,j} x_{n} + \sum_{n} \frac{1}{\sum_{i}^{k} e^{w_{i} \cdot x_{n}}} * e^{w_j \cdot x_{n}} * x_{n}  $ \\ \\
 
@@ -56,13 +53,58 @@ $\frac{\delta J}{\delta w_{j}} = \sum_{n} x_{n} \big(\frac{e^{w_j \cdot x_{n}}} 
 
 $\frac{\delta J}{\delta w_{j}} = \sum_{n} x_{n} \big(s_{j} - y_{n,j}\big) $ \\ \\
 
-Where $s_{j}$ is the softmax function $p(y_{j}|x)$, and $y_{n,j}$ is 1 if $k == j$, 0 otherwise.
-$\frac{\delta J}{\delta w_{j}}$ is for a single class vector $w_{j}$. The gradient of the loss function with respect to the full weight matrix $\frac{\delta J}{\delta W}$ is then: \\
+Where $s_{j}$ (a scalar) is the softmax function $p(y_{j}|x)$ for class $j$, and $y_{n,j}$ (a scalar) is 1 if $k == j$, and 0 otherwise. $\frac{\delta J}{\delta w_{j}}$ is for a single class' weight vector $w_{j}$. Admittedly, this is poor notation, since I've mixed scalars with vectors. In cleaner vector form, where $x, s, y$ are all vectors, the loss for the single $i^{th}$ training example is: \\
+
+$\frac{\delta J_{i}}{\delta W} = x_{i} \otimes \big(s_{i} - y_{i}\big) $ \\ \\
+
+Read it mnemonically as ``x crossed smigh'' for `x crossed s minus y', and you'll still remember it by lunch. X crossed smigh--that disloyal bastard. Y took from s, then x crossed them both. X crossed smigh. Got it? The cheesier the mnemonic, the easier to remember. \\
+
+The gradient of the loss function with respect to the full weight matrix $\frac{\delta J}{\delta W}$ is then: \\
 
 $\boxed{ \frac{\delta J}{\delta W} = \sum_{n} x_{n} \otimes \big(s - y^{*}\big) }$ \\
 
-Where $s$ is our vector of output probabilities and $y$ is a one-hot encoding of class labels. But compactness is practical to oneself, and confounding to one's audience. So for a quick review, the outer product of two vectors $a \in \mathbb{R}^{n}$ and $b \in \mathbb{R}^{m}$ is a matrix of dimension $n \times m$ whose rows are the vector-scalar products of $a$ and each (scalar) element $b_{i}$ of $b$: \\ \\
-$C_{n \times m} &= \begin{bmatrix} \\
+Where $s$ is our vector of output probabilities and $y$ is a one-hot encoding of true class labels. \\
+
+
+
+A concrete example does a better job of explaining the mechanics of the gradient calculation. Let $x = [2,2,2]$ and $s = [0.1, 0.7, 0.2]$ and the true one-hot encoding $y = [0,0,1]$. Using zero-based indexing, the correct label is $j=2$, but our model is over-estimating $j=1$: $s_{1} = 0.7$. \\
+
+$x \otimes \big(s - y\big) = [2,2,2] \otimes ([0.1, 0.7, 0.3] - [0, 0, 1])$ \\ \\
+
+$x \otimes \big(s - y\big) = [2,2,2]
+\begin{bmatrix} (0.1 - 0) \\
+         (0.7 - 0) \\
+         (0.3 - 1) \\
+         \end{bmatrix}
+$ \\
+
+$x \otimes \big(s - y\big) = [2,2,2]
+\begin{bmatrix} 0.1 \\
+         0.7 \\
+         -0.7 \\
+         \end{bmatrix}
+$ \\
+
+$x \otimes \big(s - y\big) =
+\begin{bmatrix} [2,2,2] \odot 0.1 \\
+         [2,2,2] \odot 0.7\\
+         [2,2,2] \odot -0.7\\
+         \end{bmatrix}
+$ \\
+
+$x \otimes \big(s - y\big) =
+\begin{bmatrix} 0.2 & 0.2 & 0.2 \\
+         1.4 & 1.4 & 1.4 \\
+         -1.4 & -1.4 & -1.4 \\
+         \end{bmatrix}
+$ \\
+
+Note how the input (all 2's) is scaled by the magnitudes of the predictions: incorrect predictions are large and positive, and correct ones are large and negative. \\
+
+At this point, you read too quickly, as I would, and some tenured author handwaves breezily about how simple or obvious the math is, belying the hours they spent studying and preparing them on some lackadaisical university campus between trips to the campus coffee shop. Needless to say, this is not our sort \textit{friendo}, and while compactness is practical to oneself, it is usually confounding to an audience grasping it for the first time. \\
+
+So for a quick review, the outer product of two vectors $a \in \mathbb{R}^{n}$ and $b \in \mathbb{R}^{m}$ is a matrix of dimension $n \times m$ whose rows are the vector-scalar products of $a$ and each (scalar) element $b_{i}$ of $b$: \\
+$C_{n \times m} = \begin{bmatrix} \\
          a \odot b_{1} \\
          a \odot b_{2} \\
           \vdots \\
@@ -72,7 +114,7 @@ $ \\
 
 Therefore, the outer product in $\frac{\delta J}{\delta W}$ is:
 
-$C_{n \times n} &= \begin{bmatrix} \\
+$C_{n \times n} = \begin{bmatrix} \\
          x \odot (s_{1} - y_{1}) \\
          x \odot (s_{2} - y_{2}) \\
           \vdots \\
