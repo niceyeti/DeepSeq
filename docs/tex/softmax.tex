@@ -3,7 +3,7 @@
 \usepackage{amsmath}
 \usepackage{amsfonts}
 
-\title{A lurid account of the time X crossed Smigh: Calculating textbook softmax derivatives}
+\title{A Lurid Account X crossed Smigh: \\ Calculating textbook softmax derivatives}
 \author{Jesse Waite}
 \date{February 2020}
 
@@ -32,7 +32,7 @@ $J(W,X) = - \sum_{n} \sum_{k} y_{n,k}\Big(w_{k} \cdot x_{n} - log\big(\sum_{j}^{
 
 $ \boxed{ J(W,X) = - \sum_{n} \sum_{k} y_{n,k}\big(w_{k} \cdot x_{n}\big) + \sum_{n} \sum_{k} y_{n,k} log\big(\sum_{j}^{k} e^{w_{j} \cdot x_{n}}\big) }$ \\ \\
 
-Notice that in the right-hand sum (over n, k) that $\sum_{k} y_{n,k}$ is 1.0, since it is a one-hot encoded vector. Likewise, nothing inside the $log(\dot)$ depends on the index $k$. Based on this, the log-likelihood simplifies to: \\
+Notice that in the right-hand sum (over $n$ and $k$) that $\sum_{k} y_{n,k}$ is 1.0, since it is a one-hot encoded vector. Likewise, nothing inside the $log(\dot)$ depends on the index $k$. Based on this, the log-likelihood simplifies to: \\
 
 $ \boxed{ J(W,X) = - \sum_{n} \sum_{k} y_{n,k}\big(w_{k} \cdot x_{n}\big) + \sum_{n} log\big(\sum_{j}^{k} e^{w_{j} \cdot x_{n}}\big) }$ \\
 
@@ -57,17 +57,19 @@ Where $s_{j}$ (a scalar) is the softmax function $p(y_{j}|x)$ for class $j$, and
 
 $\frac{\delta J_{i}}{\delta W} = x_{i} \otimes \big(s_{i} - y_{i}\big) $ \\ \\
 
-Read it mnemonically as ``x crossed smigh'' for `x crossed s minus y', and you'll still remember it by lunch. X crossed smigh--that disloyal bastard. Y took from s, then x crossed them both. X crossed smigh. Got it? The cheesier the mnemonic, the easier to remember. \\
+Read it mnemonically as ``x crossed smigh'' for `x crossed s minus y', and you'll still remember it by lunch. X crossed smigh--that treacherous . Y took from s, then x crossed them both. X crossed smigh. Got it? IMHO the cheesier the mnemonic, the easier to remember. \\
 
 The gradient of the loss function with respect to the full weight matrix $\frac{\delta J}{\delta W}$ is then: \\
 
 $\boxed{ \frac{\delta J}{\delta W} = \sum_{n} x_{n} \otimes \big(s - y^{*}\big) }$ \\
 
-Where $s$ is our vector of output probabilities and $y$ is a one-hot encoding of true class labels. \\
+Where $s$ is our vector of output probabilities and $y^{*}$ is a one-hot encoding of true class labels. One epoch of gradient descent is given by subtracting this value (to proceed in the direction opposite of the gradient) multiplied by our learning rate $\alpha$: \\
 
+$ W = W - \alpha \frac{\delta J}{\delta W}$
 
+\section{Useful and Some Less Useful Tedium}
 
-A concrete example does a better job of explaining the mechanics of the gradient calculation. Let $x = [2,2,2]$ and $s = [0.1, 0.7, 0.2]$ and the true one-hot encoding $y = [0,0,1]$. Using zero-based indexing, the correct label is $j=2$, but our model is over-estimating $j=1$: $s_{1} = 0.7$. \\
+A concrete example does a better job of explaining the mechanics of the gradient calculation. Let $x = [2,2,2]$ and $s = [0.1, 0.7, 0.2]$ and the true one-hot encoding $y = [0,0,1]$. For zero-based indexing the correct label is $j=2$, but our model is over-estimating $j=1$: $s_{1} = 0.7$. \\
 
 $x \otimes \big(s - y\big) = [2,2,2] \otimes ([0.1, 0.7, 0.3] - [0, 0, 1])$ \\ \\
 
@@ -101,7 +103,7 @@ $ \\
 
 Note how the input (all 2's) is scaled by the magnitudes of the predictions: incorrect predictions are large and positive, and correct ones are large and negative. \\
 
-At this point, you read too quickly, as I would, and some tenured author handwaves breezily about how simple or obvious the math is, belying the hours they spent studying and preparing them on some lackadaisical university campus between trips to the campus coffee shop. Needless to say, this is not our sort \textit{friendo}, and while compactness is practical to oneself, it is usually confounding to an audience grasping it for the first time. \\
+At this point you read too quickly, as I would, and some tenured author handwaves breezily about how simple or obvious the math is, belying the hours they spent studying and preparing them between lackadaisacal trips to the university coffee shop. Needless to say, this is not our sort \textit{friendo}, and while compactness is practical to oneself, it is usually confounding to an audience grasping it for the first time. \\
 
 So for a quick review, the outer product of two vectors $a \in \mathbb{R}^{n}$ and $b \in \mathbb{R}^{m}$ is a matrix of dimension $n \times m$ whose rows are the vector-scalar products of $a$ and each (scalar) element $b_{i}$ of $b$: \\
 $C_{n \times m} = \begin{bmatrix} \\
@@ -122,15 +124,9 @@ $C_{n \times n} = \begin{bmatrix} \\
          \end{bmatrix}
 $ \\
 
-The point of belaboring this expression is that we can observe important properties by being this explicit. Only one of $y_{i}$ is 1, and all the rest are 0. So for the incorrect labels, the gradient of the loss with respect to that weight vector is the input multiplied by the prediction for that (incorrect) class, $x_{n} \odot s_{j}$. Therefore, the larger our prediction for an incorrect label, the larger and more positive the weight update for that example. However for the correct class, we get the opposite: $x_{n} \odot (s_{j} - 1.0)$, meaning that if our prediction for the correct label is small, then the update for this example is larger and more negative. So the closer any of our predictions are to their target label values of either 0.0 or 1.0, the smaller the magnitude of the update. The positivity/negative relationship is reversed in gradient descent since we proceed in the \textit{opposite} direction of these updates. It might actually be clearer to include that negation above to make the weight-update behavior clearer, but if you've read this far, you grasp it anyway.
+The point of belaboring this expression is that we can observe important properties by being this explicit. Only one of $y_{i}$ is 1, and all the rest are 0. So for the incorrect labels, the gradient of the loss with respect to that weight vector is the input multiplied by the prediction for that (incorrect) class, $x_{n} \odot s_{j}$. Therefore, the larger our prediction for an incorrect label, the larger and more positive the weight update for that example. However for the correct class, we get the opposite: $x_{n} \odot (s_{j} - 1.0)$, meaning that if our prediction for the correct label is small, then the update for this example is larger and more negative. So the closer any of our predictions are to their target label values of either 0.0 or 1.0, the smaller the magnitude of the update. The positivity/negativity relationship is reversed in gradient descent since we proceed in the \textit{opposite} direction of these updates. It might actually be clearer to include that negation above to make the weight-update behavior clearer, but if you've read this far, you grasp it anyway.
 
-Further, recall that the softmax function tends to exaggerate the probability of the max value of some vector. This is desirable discrimination behavior for any classifier, however, note that the weight corrections will be exaggerated via these scalar probabilities $s$ because they result from multiplication with them. I don't know what this means in depth, but it means that incorrect predictions will have very large contribution to the gradient. Knowing this, you might even exploit input data clustering in initial stages of gradient descent, but its just hacking. The point is just that the value of each example to gradient is highly uneven, and you might even design training methods to exploit this behavior. It also helps inform regularization strategies, most notably because if the data are linearly separable, then the gradient updates will proceed forever, and the magnitude of the weights will grow without bound.
-
-
-Having derived $\frac{\delta J}{\delta W}$, one epoch of gradient descent is given by subtracting this value (to proceed in the direction opposite of the gradient) multiplied by our learning rate $\alpha$: \\
-
-$ W = W - \alpha \frac{\delta J}{\delta W}$
-
+Outlier effects: recall that the softmax function tends to exaggerate the probability of the max value of some vector. This is desirable discrimination behavior for any classifier, however, note that the weight corrections will be exaggerated via these scalar probabilities $s$ because they result from multiplication with them. I don't know what this means in depth, but it means that incorrect predictions will have very large contribution to the gradient. Knowing this, you might even exploit input data clustering in initial stages of gradient descent to mitigate outliers, but its just hacking. The point is just that the value of each example to gradient is highly uneven, and you could design training methods to exploit this behavior. It also helps inform regularization strategies, most notably because if the data are linearly separable, then the gradient updates will proceed forever, and the magnitude of the weights will grow without bound!
 
 
 

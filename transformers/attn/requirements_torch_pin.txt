@@ -1,0 +1,17 @@
+# This locks to torch 2.3, which should be fine for now. The issue is that torchtext 0.18 was the last
+# version, which only supports torch 2.3; the latest torch is 2.8. I won't be missing much from 2.8,
+# and eventually torchtext can be removed, after getting to a working example.
+pandas
+torch==2.3
+# Torchdata 0.9.0 for torhdata.datapipes, which is required by torchtext 0.18.
+torchdata==0.9.0
+# Portalocker 2.8 is an arbitrary requirement of torchdata.
+portalocker~=2.8.0
+torchtext==0.18
+spacy
+altair
+jupytext
+flake8
+black
+GPUtil
+wandb

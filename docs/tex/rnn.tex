@@ -1,0 +1,47 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{amsmath}
+\usepackage{amsfonts}
+
+\title{The Backyard Mechanic's Guide to Recurrent Neural Network Derivatives}
+\author{Jesse Waite}
+\date{February 2020}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+This is an informal personal study guide related to recurrent neural network derivatives: ``vanilla''/Elman networks, GRU's, computational graphs, and implementation patterns. Recurrent neural networks provide a lot of useful math for diving into the mechanics of deep learning, whatever the actual performance properties of these sorts of networks themselves. This is just a personal study guide of my own, but I hope to keep it polished enough for others, from entry-level to more advanced material.
+
+\section{Introduction}
+
+\section{Appendix}
+
+Various activation function derivatives. Deriving most of these derivatives is fairly straightforward. \\
+
+$\frac{d}{dw} w \cdot x = x$ \\
+
+$\frac{d}{dx} relu(x) =\frac{d}{dw} (x\ if\ x\ >\ 0\ else\ 0) = 1\ if\ x\ >\ 0\ else\ 0\ (undefined\ at\ exactly\ 0)$ \\
+
+$\frac{d}{dx} softplus(x) = \frac{d}{dx}(ln(1 + e^{x})) = \frac{1}{1 + e^{-x}} = \sigma(x) $ \\
+
+$\frac{d}{dw} tanh(w,x) = 1 - tanh^2(w,x) * \frac{d}{dw}$ \\
+
+$\frac{d}{dw} \sigma(w,x) = \sigma(w,x)(1 - \sigma^{2}(w,x)) \frac{d}{dw}$ \\
+
+The softmax function is not an activation function, but occurs so often and has such a simple derivative it is worth adding. The softmax function takes a vector as input and produces a vector output. The ``full'' softmax function also includes the matrix-vector multiplication which produces the input vector; let's make sure we define softmax this way, as the composition of a matrix-vector multiplication $g(W,x) = z$ followed by softmax $f(z) = s$: $smax(W,x) = f(g(W,x)) = s$. I have another guide on the softmax derivative, but I won't tell if you just memorize these since they occur so often.
+
+$\frac{d}{dW} smax(W,x) = x \otimes (s - y^{*})$
+
+I like to remember this as "x crossed smigh" for "x crossed s minus y", where $y^{*}$ is the one-hot vector of true class labels. In many works the output of softmax is labeled $o$ instead of $s$, in which case its "x crossed oh my".
+
+
+
+
+\section{references}
+
+
+
+
+\end{document}

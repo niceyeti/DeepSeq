@@ -6,3 +6,4 @@ seq_models/rnn_models
 autograd/resources
 *aux
 *log
+*venv
