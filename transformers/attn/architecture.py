@@ -1,7 +1,9 @@
 import os
-import re
 import itertools
 import random
+from typing import Generator as TGenerator
+from typing import Tuple
+
 from os.path import exists
 import torch
 import torch.nn as nn
@@ -14,9 +16,11 @@ import pandas as pd
 import altair as alt
 from torchtext.data.functional import to_map_style_dataset
 from torch.utils.data import DataLoader
+from torchtext.vocab import Vocab
 from torchtext.vocab import build_vocab_from_iterator
 import torchtext.datasets as datasets
 import spacy
+from spacy import Language
 import GPUtil
 import warnings
 from torch.utils.data.distributed import DistributedSampler
@@ -56,35 +60,10 @@ class DummyScheduler:
         None
 
 
-class EncoderDecoder(nn.Module):
-    """
-    A standard Encoder-Decoder architecture. Base for this and many other
-    models.
-    """
-
-    def __init__(self, encoder, decoder, src_embed, tgt_embed, generator):
-        super(EncoderDecoder, self).__init__()
-        self.encoder = encoder
-        self.decoder = decoder
-        self.src_embed = src_embed
-        self.tgt_embed = tgt_embed
-        self.generator = generator
-
-    def forward(self, src, tgt, src_mask, tgt_mask):
-        "Take in and process masked src and target sequences."
-        return self.decode(self.encode(src, src_mask), src_mask, tgt, tgt_mask)
-
-    def encode(self, src, src_mask):
-        return self.encoder(self.src_embed(src), src_mask)
-
-    def decode(self, memory, src_mask, tgt, tgt_mask):
-        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
-
-
 class Generator(nn.Module):
     "Define standard linear + softmax generation step."
 
-    def __init__(self, d_model, vocab):
+    def __init__(self, d_model: int, vocab):
         super(Generator, self).__init__()
         self.proj = nn.Linear(d_model, vocab)
 
@@ -192,6 +171,33 @@ class DecoderLayer(nn.Module):
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
         x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask))
         return self.sublayer[2](x, self.feed_forward)
+
+
+class EncoderDecoder(nn.Module):
+    """
+    A standard Encoder-Decoder architecture. Base for this and many other
+    models.
+    """
+
+    def __init__(
+        self, encoder: Encoder, decoder: Decoder, src_embed, tgt_embed, generator
+    ):
+        super(EncoderDecoder, self).__init__()
+        self.encoder = encoder
+        self.decoder = decoder
+        self.src_embed = src_embed
+        self.tgt_embed = tgt_embed
+        self.generator = generator
+
+    def forward(self, src, tgt, src_mask, tgt_mask):
+        "Take in and process masked src and target sequences."
+        return self.decode(self.encode(src, src_mask), src_mask, tgt, tgt_mask)
+
+    def encode(self, src, src_mask):
+        return self.encoder(self.src_embed(src), src_mask)
+
+    def decode(self, memory, src_mask, tgt, tgt_mask):
+        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
 
 
 def subsequent_mask(size):
@@ -341,7 +347,13 @@ class Embeddings(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    """Implement the PE function."""
+    """
+    Implement the PE function.
+
+    The position encodings are 'frozen' embeddings, in that they have
+    requires_grad set to false, and no weights are learned during training. They
+    merely add positional information--which is pretty interesting.
+    """
 
     def __init__(self, d_model, dropout, max_len=5000):
         super(PositionalEncoding, self).__init__()
@@ -389,18 +401,32 @@ def example_positional():
     )
 
 
-def make_model(src_vocab, tgt_vocab, N=6, d_model=512, d_ff=2048, h=8, dropout=0.1):
+def make_model(
+    src_vocab_size: int,
+    tgt_vocab_size: int,
+    N: int = 6,
+    d_model: int = 512,
+    d_ff: int = 2048,
+    h: int = 8,
+    dropout: int = 0.1,
+):
     "Helper: Construct a model from hyperparameters."
     c = copy.deepcopy
     attn = MultiHeadedAttention(h, d_model)
+    # FF network layer maps d_model -> d_ff hidden layer -> d_model.
     ff = PositionwiseFeedForward(d_model, d_ff, dropout)
     position = PositionalEncoding(d_model, dropout)
     model = EncoderDecoder(
         Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
         Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
-        nn.Sequential(Embeddings(d_model, src_vocab), c(position)),
-        nn.Sequential(Embeddings(d_model, tgt_vocab), c(position)),
-        Generator(d_model, tgt_vocab),
+        # Sequential: modules are added to it in the order passed in the
+        # constructor. The ``forward()`` method of ``Sequential`` accepts any
+        # input and forwards it to the first module it contains. It then
+        # "chains" outputs to inputs sequentially for each subsequent module,
+        # finally returning the output of the last module.
+        nn.Sequential(Embeddings(d_model, src_vocab_size), c(position)),
+        nn.Sequential(Embeddings(d_model, tgt_vocab_size), c(position)),
+        Generator(d_model, tgt_vocab_size),
     )
 
     # This was important from their code. Initialize parameters with Glorot /
@@ -733,7 +759,7 @@ class SimpleLossCompute:
         return sloss.data * norm, sloss
 
 
-def greedy_decode(model, src, src_mask, max_len, start_symbol):
+def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
     memory = model.encode(src, src_mask)
     ys = torch.zeros(1, 1).fill_(start_symbol).type_as(src.data)
     for i in range(max_len - 1):
@@ -792,7 +818,7 @@ def example_simple_model():
     print(greedy_decode(model, src, src_mask, max_len=max_len, start_symbol=0))
 
 
-def load_tokenizers():
+def load_tokenizers() -> Tuple[Language, Language]:
 
     try:
         spacy_de = spacy.load("de_core_news_sm")
@@ -847,7 +873,19 @@ def build_vocabulary(spacy_de, spacy_en):
     return vocab_src, vocab_tgt
 
 
-def build_en_vocabulary(train_iter, val_iter, spacy_en):
+def build_en_vocabulary(
+    train_iter: TGenerator[Tuple[str, str], None, None],
+    val_iter: TGenerator[Tuple[str, str], None, None],
+    spacy_en: Language,
+) -> Vocab:
+    """
+    Returns a Vocab object for mapping tokens to indices.
+
+    @train_iter: An iterator producing (str,str) tups, where the first item is the input sentence and the second is the target output.
+    @val_iter: The validation iterator, the same type as @train_iter.
+    @spacy_en: The spacy english model.
+    """
+
     def tokenize_en(text):
         return tokenize(text, spacy_en)
 
@@ -958,8 +996,8 @@ JW: the Ai summary is actually pretty good for explaining some of this:
     deep learning with spaCy and PyTorch may show code where get_stoi() is used.
     In these cases, spaCy is used only for its tokenization. The resulting
     tokens are then passed to a torchtext Vocab object, which has its own
-    methods for converting strings to integers for deep learning models. 
-    
+    methods for converting strings to integers for deep learning models.
+
     For example:
 
         import spacy from torchtext.vocab import build_vocab_from_iterator
@@ -1065,7 +1103,12 @@ def read_novel_sentences(fpath: str):
     return sentences
 
 
-def get_novel_sentence_iters(fpath: str, split: float = 0.8):
+def get_novel_sentence_iters(
+    fpath: str, split: float = 0.8
+) -> Tuple[
+    TGenerator[Tuple[str, str], None,
+               None], TGenerator[Tuple[str, str], None, None]
+]:
     """
     From fpath, read all lines, splits on any of {!?.:}, preserving these
     at the end of sequences, and yields each sentence in this manner as a tuple pair.
@@ -1105,7 +1148,7 @@ def create_seq_dataloaders(
     batch_size=12000,
     max_padding=128,
     is_distributed=True,
-):
+) -> Tuple[DataLoader, DataLoader]:
     """
     @novel_path: The path to a novel, such as the gutenberg huckfin utf8 novel,
     whose sentences can be used as training sequences. The novel should be utf8, line
@@ -1119,8 +1162,12 @@ def create_seq_dataloaders(
     sequences are identical, i.e. for prediction tasks.
     """
 
+    # Returns tokenized text.
+    # Example:
+    # - in:  [token.text for token in  spacy_en.tokenizer("foo Bar")]
+    # - out: ['foo', 'Bar']
     def tokenize_en(text):
-        return tokenize(text, spacy_en)
+        return [tok.text for tok in spacy_en.tokenizer(text)]
 
     def collate_fn(batch):
         return collate_batch(
@@ -1138,7 +1185,7 @@ def create_seq_dataloaders(
     This is the spot at which text sequences are injected, and therefore the point at which
     to modify the problem structure from translation, to prediction, etc.
     The test_iter was unused in the original example code, so I've omitted it here as well.
-    
+
     This matches the original call:
         train_iter, valid_iter, test_iter = datasets.Multi30k(
             language_pair=("de", "en"))
@@ -1155,15 +1202,17 @@ def create_seq_dataloaders(
     # TODO: make these iters, not funcs.
     train_iter, valid_iter = get_novel_sentence_iters(novel_path)
 
-    train_iter_map = to_map_style_dataset(
-        train_iter
-    )  # DistributedSampler needs a dataset len()
+    train_iter_map = to_map_style_dataset(train_iter)
+    # DistributedSampler for sampling the training data for specific effects.
     train_sampler = DistributedSampler(
         train_iter_map) if is_distributed else None
     valid_iter_map = to_map_style_dataset(valid_iter)
     valid_sampler = DistributedSampler(
         valid_iter_map) if is_distributed else None
 
+    # Data loader combines a dataset and a sampler, and provides an iterable
+    # over the given dataset. There is good DI here, this abstraction wraps all
+    # batching, sampling, and conversion from vocab to embedding vectors.
     train_dataloader = DataLoader(
         train_iter_map,
         batch_size=batch_size,
@@ -1188,13 +1237,16 @@ def create_seq_dataloaders(
 # No gpu was used here, because my laptop doesn't have one and this is just to
 # develop the code.
 def my_train_worker(
-    vocab,
-    spacy_en,
-    config,
-):
+    vocab: Vocab,
+    spacy_en: Language,
+    config: dict,
+) -> EncoderDecoder:
     pad_idx = vocab["<blank>"]
-    d_model = 512
-    model = make_model(len(vocab), len(vocab), N=6)
+    d_model = config["d_model"]
+    num_layers = config["num_layers"]
+    num_epochs = config["num_epochs"]
+
+    model = make_model(len(vocab), len(vocab), N=num_layers)
     module = model
     is_main_process = True
 
@@ -1216,14 +1268,17 @@ def my_train_worker(
     optimizer = torch.optim.Adam(
         model.parameters(), lr=config["base_lr"], betas=(0.9, 0.98), eps=1e-9
     )
+    # Sets the learning rate of each parameter group to the initial lr times a
+    # given function. When last_epoch=-1, sets initial lr as lr.
     lr_scheduler = LambdaLR(
         optimizer=optimizer,
         lr_lambda=lambda step: rate(
             step, d_model, factor=1, warmup=config["warmup"]),
+        verbose=True,
     )
     train_state = TrainState()
 
-    for epoch in range(config["num_epochs"]):
+    for epoch in range(num_epochs):
         model.train()
         print(f"CPU Epoch {epoch} Training ====", flush=True)
         _, train_state = run_epoch(
@@ -1257,6 +1312,17 @@ def my_train_worker(
     if is_main_process:
         file_path = "%sfinal.pt" % config["file_prefix"]
         torch.save(module.state_dict(), file_path)
+
+    return model
+
+
+def my_generation(model: EncoderDecoder, vocab: Vocab):
+    src_text = "The widow she cried over me, and called me a poor lost lamb".split(
+        " ")
+    src = torch.LongTensor([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]])
+    max_len = src.shape[1]
+    src_mask = torch.ones(1, 1, max_len)
+    print(greedy_decode(model, src, src_mask, max_len=max_len, start_symbol=0))
 
 
 # The original train_worker, using gpus and built to train on translation.
