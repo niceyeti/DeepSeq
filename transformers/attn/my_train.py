@@ -23,7 +23,9 @@ import json
 # Prod config: this is when you want to actually run training and care about
 # saved outputs.
 config = dict()
+config_name = "default"
 if os.getenv("IS_PROD") == "true":
+    config_name = "prod"
     config = {
         "batch_size": 32,
         "distributed": False,
@@ -55,7 +57,7 @@ else:
 
 print(
     f"""########################################################################
-Beginning training with config params:\n{json.dumps(config, indent="  ")}
+Beginning training with {config_name} config params:\n{json.dumps(config, indent="  ")}
 ########################################################################
 """
 )
