@@ -11,10 +11,18 @@
         // Configure properties specific to VS Code.
         "vscode": {
             "settings": {
-                "python.defaultInterpreterPath": "/workspaces/DeepSeq/transformers/attn/venv/bin/python"
+                "python.defaultInterpreterPath": "/workspaces/DeepSeq/transformers/attn/venv/bin/python",
+                "[python]": {
+                    "editor.defaultFormatter": "mikoz.black-py"
+                },
+                "black-formatter.args": [
+                    "--line-length",
+                    "100" // Set your desired line length here
+                ]
             },
             "extensions": [
                 "mikoz.black-py",
+                //"ms-python.black-formatter",
                 "ms-toolsai.jupyter"
             ]
         }

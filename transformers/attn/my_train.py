@@ -1,22 +1,19 @@
 # Objective: to learn attention/transformer models, I want to train on
 # Huckleberry Finn. A lot of this is just retreading old ML/NLP projects and
-# knowledge and to begin catching up to progress since the Attention is All
-# You Need paper. The original transformer was used for translation, mapping
-# english training data to german translations. The assumption here is that
-# the same data can be used for input and output in order to train a
-# prediction model for prediction/generation tasks instead of translation.
+# knowledge and to begin catching up to progress since the Attention is All You
+# Need paper. The original transformer was used for translation, mapping english
+# training data to german translations. The assumption here is that the same
+# data can be used for input and output in order to train a prediction model for
+# prediction/generation tasks instead of translation.
+#
+# TODO: fix the huckfinn dataset and loader. Run the loader to view the
+# punctuation and other issues, there are lots of noisy examples, periods,
+# commas, incorrect tokens, etc.
+
 
 import architecture
 import os
 import json
-
-# from IPython.display import display
-
-# smoothing_chart = architecture.example_label_smoothing()
-# smoothing_chart.save("smoothing.html") display(smoothing_chart)
-
-# train_iter, val_iter = architecture.get_novel_sentence_iters(
-#     "./data/huckfinn_utf8.txt") for tup in train_iter(): print(tup)
 
 # TODO: make config a class
 
@@ -46,18 +43,18 @@ else:
         "distributed": False,
         "num_epochs": 1,
         "accum_iter": 10,
-        "num_layers": 2,  # From the original paper, 6 layers.
-        "d_model": 100,  # From the original paper, 512.
+        "num_layers": 2,
+        "d_model": 256,
         "base_lr": 1.0,
         "max_padding": 72,
         "warmup": 3000,
-        "file_prefix": "chuckleberryfinn_model_",
-        "file_prefix": "deletable",
+        "file_prefix": "stillDeletable",
     }
 
 print(
     f"""########################################################################
-Beginning training with {config_name} config params:\n{json.dumps(config, indent="  ")}
+Beginning training with {config_name} config:
+{json.dumps(config, indent="  ")}
 ########################################################################
 """
 )
@@ -67,12 +64,26 @@ _, spacy_en = architecture.load_tokenizers()
 # TODO: add a max sequence length parameter. The model has a fixed max input
 # size of 512 tokens, and sentences need to be truncated to that length or
 # omitted if too long.
-train_iter, val_iter = architecture.get_novel_sentence_iters(
-    "./data/huckfinn_utf8.txt")
+train_iter, val_iter = architecture.get_novel_sentence_iters("./data/huckfinn_utf8.txt")
 
 vocab = architecture.build_en_vocabulary(train_iter, val_iter, spacy_en)
 
-architecture.my_train_worker(vocab, spacy_en, config)
+model = architecture.my_train_worker(vocab, spacy_en, config)
+
+# Not DRY, but reload the data loaders created in my_train_worker
+
+# train_dataloader, valid_dataloader = architecture.create_seq_dataloaders(
+#     # TODO: add path to config
+#     "./data/huckfinn_utf8.txt",
+#     torch.device("cpu"),
+#     vocab,
+#     spacy_en,
+#     batch_size=config["batch_size"],
+#     max_padding=config["max_padding"],
+#     is_distributed=False,
+# )
+
+# architecture.check_outputs(valid_dataloader, model, vocab, vocab)
 
 # TODO: 8/31: left off here. The task is to complete the my_generation method to generate
 # sequences using greedy decoding or possibly other strategies. The ground level task

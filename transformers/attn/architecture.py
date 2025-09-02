@@ -1,8 +1,9 @@
 import os
+import re
 import itertools
 import random
 from typing import Generator as TGenerator
-from typing import Tuple
+from typing import Tuple, List
 
 from os.path import exists
 import torch
@@ -180,7 +181,12 @@ class EncoderDecoder(nn.Module):
     """
 
     def __init__(
-        self, encoder: Encoder, decoder: Decoder, src_embed, tgt_embed, generator
+        self,
+        encoder: Encoder,
+        decoder: Decoder,
+        src_embed: nn.Sequential,
+        tgt_embed: nn.Sequential,
+        generator: Generator,
     ):
         super(EncoderDecoder, self).__init__()
         self.encoder = encoder
@@ -204,8 +210,7 @@ def subsequent_mask(size):
     """Mask out subsequent positions. Output embeddings are offset by one
     position."""
     attn_shape = (1, size, size)
-    subsequent_mask = torch.triu(torch.ones(
-        attn_shape), diagonal=1).type(torch.uint8)
+    subsequent_mask = torch.triu(torch.ones(attn_shape), diagonal=1).type(torch.uint8)
     return subsequent_mask == 0
 
 
@@ -253,6 +258,8 @@ def attention(query, key, value, mask=None, dropout=None):
     """
     d_k = query.size(-1)
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
+    # TODO: masked_fill fails when I try to run my model for generation, and I need to understand why.
+    # print(f"SCORES SIZE: {scores.size()} MASK SIZE: {mask.size()} {mask}")
     if mask is not None:
         scores = scores.masked_fill(mask == 0, -1e9)
     p_attn = scores.softmax(dim=-1)
@@ -300,8 +307,7 @@ class MultiHeadedAttention(nn.Module):
         ]
 
         # 2) Apply attention on all the projected vectors in batch.
-        x, self.attn = attention(
-            query, key, value, mask=mask, dropout=self.dropout)
+        x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
 
         # 3) "Concat" using a view and apply a final linear.
         #
@@ -309,8 +315,7 @@ class MultiHeadedAttention(nn.Module):
         # contiguous, despite previous tranpose and other view operations; it
         # returns the original tensor if not transforms have been applied, and a
         # copied new tensor otherwise.
-        x = x.transpose(1, 2).contiguous().view(
-            nbatches, -1, self.h * self.d_k)
+        x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_k)
         del query
         del key
         del value
@@ -337,13 +342,13 @@ class Embeddings(nn.Module):
     The weights are multiplied by sqrt(d_model)
     """
 
-    def __init__(self, d_model, vocab):
+    def __init__(self, d_model: int, vocab: int):
         super(Embeddings, self).__init__()
-        self.lut = nn.Embedding(vocab, d_model)
+        self.lookup_table = nn.Embedding(vocab, d_model)
         self.d_model = d_model
 
     def forward(self, x):
-        return self.lut(x) * math.sqrt(self.d_model)
+        return self.lookup_table(x) * math.sqrt(self.d_model)
 
 
 class PositionalEncoding(nn.Module):
@@ -417,16 +422,16 @@ def make_model(
     ff = PositionwiseFeedForward(d_model, d_ff, dropout)
     position = PositionalEncoding(d_model, dropout)
     model = EncoderDecoder(
-        Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
-        Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
+        encoder=Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
+        decoder=Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
         # Sequential: modules are added to it in the order passed in the
         # constructor. The ``forward()`` method of ``Sequential`` accepts any
         # input and forwards it to the first module it contains. It then
         # "chains" outputs to inputs sequentially for each subsequent module,
         # finally returning the output of the last module.
-        nn.Sequential(Embeddings(d_model, src_vocab_size), c(position)),
-        nn.Sequential(Embeddings(d_model, tgt_vocab_size), c(position)),
-        Generator(d_model, tgt_vocab_size),
+        src_embed=nn.Sequential(Embeddings(d_model, src_vocab_size), c(position)),
+        tgt_embed=nn.Sequential(Embeddings(d_model, tgt_vocab_size), c(position)),
+        generator=Generator(d_model, tgt_vocab_size),
     )
 
     # This was important from their code. Initialize parameters with Glorot /
@@ -484,8 +489,7 @@ class Batch:
     def make_std_mask(tgt, pad):
         "Create a mask to hide padding and future words."
         tgt_mask = (tgt != pad).unsqueeze(-2)
-        tgt_mask = tgt_mask & subsequent_mask(
-            tgt.size(-1)).type_as(tgt_mask.data)
+        tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data)
         return tgt_mask
 
 
@@ -515,8 +519,7 @@ def run_epoch(
     tokens = 0
     n_accum = 0
     for i, batch in enumerate(data_iter):
-        out = model.forward(batch.src, batch.tgt,
-                            batch.src_mask, batch.tgt_mask)
+        out = model.forward(batch.src, batch.tgt, batch.src_mask, batch.tgt_mask)
         loss, loss_node = loss_compute(out, batch.tgt_y, batch.ntokens)
         # loss_node = loss_node / accum_iter
         if mode == "train" or mode == "train+log":
@@ -692,8 +695,7 @@ def example_label_smoothing():
         .encode(
             alt.X("columns:O", title=None),
             alt.Y("rows:O", title=None),
-            alt.Color("target distribution:Q",
-                      scale=alt.Scale(scheme="viridis")),
+            alt.Color("target distribution:Q", scale=alt.Scale(scheme="viridis")),
         )
         .interactive()
     )
@@ -752,8 +754,7 @@ class SimpleLossCompute:
     def __call__(self, x, y, norm):
         x = self.generator(x)
         sloss = (
-            self.criterion(x.contiguous().view(-1, x.size(-1)),
-                           y.contiguous().view(-1))
+            self.criterion(x.contiguous().view(-1, x.size(-1)), y.contiguous().view(-1))
             / norm
         )
         return sloss.data * norm, sloss
@@ -891,8 +892,7 @@ def build_en_vocabulary(
 
     print("Building English Vocabulary ...")
     vocab = build_vocab_from_iterator(
-        yield_tokens(itertools.chain(train_iter, val_iter),
-                     tokenize_en, index=1),
+        yield_tokens(itertools.chain(train_iter, val_iter), tokenize_en, index=1),
         min_freq=2,
         specials=["<s>", "</s>", "<blank>", "<unk>"],
     )
@@ -1044,17 +1044,13 @@ def create_dataloaders(
             pad_id=vocab_src.get_stoi()["<blank>"],
         )
 
-    train_iter, valid_iter, test_iter = datasets.Multi30k(
-        language_pair=("de", "en"))
+    train_iter, valid_iter, test_iter = datasets.Multi30k(language_pair=("de", "en"))
 
-    train_iter_map = to_map_style_dataset(
-        train_iter
-    )  # DistributedSampler needs a dataset len()
-    train_sampler = DistributedSampler(
-        train_iter_map) if is_distributed else None
+    # DistributedSampler needs a dataset len()
+    train_iter_map = to_map_style_dataset(train_iter)
+    train_sampler = DistributedSampler(train_iter_map) if is_distributed else None
     valid_iter_map = to_map_style_dataset(valid_iter)
-    valid_sampler = DistributedSampler(
-        valid_iter_map) if is_distributed else None
+    valid_sampler = DistributedSampler(valid_iter_map) if is_distributed else None
 
     train_dataloader = DataLoader(
         train_iter_map,
@@ -1082,7 +1078,7 @@ def read_novel_sentences(fpath: str):
             if len(line.strip()) > 0 and not line.startswith("CHAPTER")
         ]
     # Common delimiters in huckfinn
-    sentence_delimiters = set(["?", ".", ":", "!"])
+    sentence_delimiters = set(["?", ".", ":", "!", ";"])
     # Wastefully cat the entire sequence so it can be split on periods more simply.
     unsafe_huge_string = " ".join(lines)
     del lines
@@ -1092,8 +1088,7 @@ def read_novel_sentences(fpath: str):
     endIndex = 1
     while start < len(unsafe_huge_string) and endIndex < len(unsafe_huge_string):
         if unsafe_huge_string[endIndex] in sentence_delimiters:
-            sentence = unsafe_huge_string[start: endIndex +
-                                          1].lstrip().rstrip()
+            sentence = unsafe_huge_string[start : endIndex + 1].lstrip().rstrip()
             start = endIndex + 1
             if len(sentence) > 0:
                 sentences.append(sentence)
@@ -1103,11 +1098,35 @@ def read_novel_sentences(fpath: str):
     return sentences
 
 
+def clean_novel_sentences(lines: List[str]) -> List[str]:
+    """
+    Given a list of sentences from some novel, which are language sequences
+    broken at sentence delimiters like "?" and ".", we still need to do some
+    additional cleaning. There are probably better libraries for this by now,
+    but for now this is just ad hoc cleaning. Lowercase and remove all
+    punctuation; this way the model will just learn language relations. It would
+    be nice to additionally tokenize with wordpieces after this step.
+    """
+    # Define characters within a character set
+    #
+    # TODO: it might be interesting to leave command and ending chars, to see
+    # how the model concludes with 'voice'.
+    characters_to_remove = "[.,!]()?\"'{}*"
+
+    out_lines = []
+    for line in lines:
+        lowercased = line.lower()
+        # Replace all occurrences of the character set with an empty string
+        cleaned = re.sub(characters_to_remove, "", lowercased)
+        out_lines.append(cleaned)
+
+    return out_lines
+
+
 def get_novel_sentence_iters(
     fpath: str, split: float = 0.8
 ) -> Tuple[
-    TGenerator[Tuple[str, str], None,
-               None], TGenerator[Tuple[str, str], None, None]
+    TGenerator[Tuple[str, str], None, None], TGenerator[Tuple[str, str], None, None]
 ]:
     """
     From fpath, read all lines, splits on any of {!?.:}, preserving these
@@ -1121,21 +1140,12 @@ def get_novel_sentence_iters(
     of that, plus any other hooks to condition the text.
     """
     lines = read_novel_sentences(fpath)
+    lines = clean_novel_sentences(lines)
 
     random.shuffle(lines)
     splitIndex = int(len(lines) * split)
     train_lines = lines[0:splitIndex]
     val_lines = lines[splitIndex:]
-
-    # This is a hack, and not known to be compliant. There are possibly other
-    # interfaces which the original iters satsified, beyond mere __iter__ and
-    # __next__ implementations.
-    # def LineIter(object):
-    #     def __init__(self, lines: list):
-    #         self._lines = lines
-    #     def __iter__(self):
-    #         return self
-    #     def __next__(self):
 
     return ((line, line) for line in train_lines), ((line, line) for line in val_lines)
 
@@ -1204,11 +1214,9 @@ def create_seq_dataloaders(
 
     train_iter_map = to_map_style_dataset(train_iter)
     # DistributedSampler for sampling the training data for specific effects.
-    train_sampler = DistributedSampler(
-        train_iter_map) if is_distributed else None
+    train_sampler = DistributedSampler(train_iter_map) if is_distributed else None
     valid_iter_map = to_map_style_dataset(valid_iter)
-    valid_sampler = DistributedSampler(
-        valid_iter_map) if is_distributed else None
+    valid_sampler = DistributedSampler(valid_iter_map) if is_distributed else None
 
     # Data loader combines a dataset and a sampler, and provides an iterable
     # over the given dataset. There is good DI here, this abstraction wraps all
@@ -1246,13 +1254,16 @@ def my_train_worker(
     num_layers = config["num_layers"]
     num_epochs = config["num_epochs"]
 
+    print(
+        f"Training params: pad_idx={pad_idx} d_model={d_model} num_layers={num_layers} num_epochs={num_epochs} vocab-len={len(vocab)}"
+    )
+
     model = make_model(len(vocab), len(vocab), N=num_layers)
     module = model
     is_main_process = True
 
     # LabelSmoothing provides regularization. See and run example_label_smoothing.
-    criterion = LabelSmoothing(
-        size=len(vocab), padding_idx=pad_idx, smoothing=0.1)
+    criterion = LabelSmoothing(size=len(vocab), padding_idx=pad_idx, smoothing=0.1)
 
     train_dataloader, valid_dataloader = create_seq_dataloaders(
         # TODO: add path to config
@@ -1272,8 +1283,7 @@ def my_train_worker(
     # given function. When last_epoch=-1, sets initial lr as lr.
     lr_scheduler = LambdaLR(
         optimizer=optimizer,
-        lr_lambda=lambda step: rate(
-            step, d_model, factor=1, warmup=config["warmup"]),
+        lr_lambda=lambda step: rate(step, d_model, factor=1, warmup=config["warmup"]),
         verbose=True,
     )
     train_state = TrainState()
@@ -1317,8 +1327,7 @@ def my_train_worker(
 
 
 def my_generation(model: EncoderDecoder, vocab: Vocab):
-    src_text = "The widow she cried over me, and called me a poor lost lamb".split(
-        " ")
+    src_text = "The widow she cried over me, and called me a poor lost lamb".split(" ")
     src = torch.LongTensor([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]])
     max_len = src.shape[1]
     src_mask = torch.ones(1, 1, max_len)
@@ -1353,8 +1362,7 @@ def train_worker(
         module = model.module
         is_main_process = gpu == 0
 
-    criterion = LabelSmoothing(
-        size=len(vocab_tgt), padding_idx=pad_idx, smoothing=0.1)
+    criterion = LabelSmoothing(size=len(vocab_tgt), padding_idx=pad_idx, smoothing=0.1)
     criterion.cuda(gpu)
 
     train_dataloader, valid_dataloader = create_dataloaders(
@@ -1373,8 +1381,7 @@ def train_worker(
     )
     lr_scheduler = LambdaLR(
         optimizer=optimizer,
-        lr_lambda=lambda step: rate(
-            step, d_model, factor=1, warmup=config["warmup"]),
+        lr_lambda=lambda step: rate(step, d_model, factor=1, warmup=config["warmup"]),
     )
     train_state = TrainState()
 
@@ -1437,11 +1444,9 @@ def train_distributed_model(vocab_src, vocab_tgt, spacy_de, spacy_en, config):
 
 def train_model(vocab_src, vocab_tgt, spacy_de, spacy_en, config):
     if config["distributed"]:
-        train_distributed_model(vocab_src, vocab_tgt,
-                                spacy_de, spacy_en, config)
+        train_distributed_model(vocab_src, vocab_tgt, spacy_de, spacy_en, config)
     else:
-        train_worker(0, 1, vocab_src, vocab_tgt,
-                     spacy_de, spacy_en, config, False)
+        train_worker(0, 1, vocab_src, vocab_tgt, spacy_de, spacy_en, config, False)
 
 
 def load_trained_model():
@@ -1464,7 +1469,26 @@ def load_trained_model():
     return model
 
 
-# if is_interactive_notebook(): model = load_trained_model()
+def my_load_trained_model(vocab_src: Vocab, vocab_tgt: Vocab, model_path: str):
+    # TODO: problematically, the same config must be used as trained the model,
+    # implying that it should be serialized with the model in some directory.
+    # There is a lot of coupling here that will need refactor.
+    config = {
+        "batch_size": 32,
+        "distributed": False,
+        "num_epochs": 8,
+        "accum_iter": 10,
+        "base_lr": 1.0,
+        "max_padding": 72,
+        "warmup": 3000,
+        "file_prefix": "multi30k_model_",
+    }
+    if not exists(model_path):
+        raise Exception(f"Model path not found: {model_path}")
+
+    model = make_model(len(vocab_src), len(vocab_tgt), N=2)
+    model.load_state_dict(torch.load(model_path))
+    return model
 
 
 def average(model, models):
@@ -1486,18 +1510,17 @@ def check_outputs(
     for idx in range(n_examples):
         print("\nExample %d ========\n" % idx)
         b = next(iter(valid_dataloader))
+        print(f"""b: {type(b)} \n{b}""")
+        exit(0)
         rb = Batch(b[0], b[1], pad_idx)
+        print(f">> {rb.src} {rb.src.size()}  {rb.src_mask} {rb.src_mask.size()}")
         greedy_decode(model, rb.src, rb.src_mask, 64, 0)[0]
 
-        src_tokens = [vocab_src.get_itos()[x]
-                      for x in rb.src[0] if x != pad_idx]
-        tgt_tokens = [vocab_tgt.get_itos()[x]
-                      for x in rb.tgt[0] if x != pad_idx]
+        src_tokens = [vocab_src.get_itos()[x] for x in rb.src[0] if x != pad_idx]
+        tgt_tokens = [vocab_tgt.get_itos()[x] for x in rb.tgt[0] if x != pad_idx]
 
-        print("Source Text (Input)        : " +
-              " ".join(src_tokens).replace("\n", ""))
-        print("Target Text (Ground Truth) : " +
-              " ".join(tgt_tokens).replace("\n", ""))
+        print("Source Text (Input)        : " + " ".join(src_tokens).replace("\n", ""))
+        print("Target Text (Ground Truth) : " + " ".join(tgt_tokens).replace("\n", ""))
         model_out = greedy_decode(model, rb.src, rb.src_mask, 72, 0)[0]
         model_txt = (
             " ".join(
@@ -1546,10 +1569,8 @@ def mtx2df(m, max_row, max_col, row_tokens, col_tokens):
                 r,
                 c,
                 float(m[r, c]),
-                "%.3d %s" % (r, row_tokens[r] if len(
-                    row_tokens) > r else "<blank>"),
-                "%.3d %s" % (c, col_tokens[c] if len(
-                    col_tokens) > c else "<blank>"),
+                "%.3d %s" % (r, row_tokens[r] if len(row_tokens) > r else "<blank>"),
+                "%.3d %s" % (c, col_tokens[c] if len(col_tokens) > c else "<blank>"),
             )
             for r in range(m.shape[0])
             for c in range(m.shape[1])
