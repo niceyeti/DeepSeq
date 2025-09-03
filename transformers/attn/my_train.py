@@ -26,7 +26,7 @@ if os.getenv("IS_PROD") == "true":
     config = {
         "batch_size": 32,
         "distributed": False,
-        "num_epochs": 8,
+        "num_epochs": 16,
         "accum_iter": 10,
         "num_layers": 6,  # From the original paper, 6 layers.
         "d_model": 512,  # From the original paper, 512.

@@ -260,8 +260,8 @@ def attention(query, key, value, mask=None, dropout=None):
     scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
     # TODO: masked_fill fails when I try to run my model for generation, and I need to understand why.
     # print(f"SCORES SIZE: {scores.size()} MASK SIZE: {mask.size()} {mask}")
-    if mask is not None:
-        scores = scores.masked_fill(mask == 0, -1e9)
+    # if mask is not None:
+    #     scores = scores.masked_fill(mask == 0, -1e9)
     p_attn = scores.softmax(dim=-1)
     if dropout is not None:
         p_attn = dropout(p_attn)
@@ -1486,7 +1486,7 @@ def my_load_trained_model(vocab_src: Vocab, vocab_tgt: Vocab, model_path: str):
     if not exists(model_path):
         raise Exception(f"Model path not found: {model_path}")
 
-    model = make_model(len(vocab_src), len(vocab_tgt), N=2)
+    model = make_model(len(vocab_src), len(vocab_tgt), N=6)
     model.load_state_dict(torch.load(model_path))
     return model
 
@@ -1511,7 +1511,7 @@ def check_outputs(
         print("\nExample %d ========\n" % idx)
         b = next(iter(valid_dataloader))
         print(f"""b: {type(b)} \n{b}""")
-        exit(0)
+        # exit(0)
         rb = Batch(b[0], b[1], pad_idx)
         print(f">> {rb.src} {rb.src.size()}  {rb.src_mask} {rb.src_mask.size()}")
         greedy_decode(model, rb.src, rb.src_mask, 64, 0)[0]

@@ -29,6 +29,6 @@ train_dataloader, valid_dataloader = architecture.create_seq_dataloaders(
 )
 
 trained_model = architecture.my_load_trained_model(
-    vocab, vocab, "stillDeletablefinal.pt")
+    vocab, vocab, "chuckleberryfinn_model_final.pt")
 
 architecture.check_outputs(valid_dataloader, trained_model, vocab, vocab)
