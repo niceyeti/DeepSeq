@@ -11,8 +11,7 @@ _, spacy_en = architecture.load_tokenizers()
 # TODO: add a max sequence length parameter. The model has a fixed max input
 # size of 512 tokens, and sentences need to be truncated to that length or
 # omitted if too long.
-train_iter, val_iter = architecture.get_novel_sentence_iters(
-    "./data/huckfinn_utf8.txt")
+train_iter, val_iter = architecture.get_novel_sentence_iters("./data/huckfinn_utf8.txt")
 
 vocab = architecture.build_en_vocabulary(train_iter, val_iter, spacy_en)
 
@@ -29,6 +28,7 @@ train_dataloader, valid_dataloader = architecture.create_seq_dataloaders(
 )
 
 trained_model = architecture.my_load_trained_model(
-    vocab, vocab, "chuckleberryfinn_model_final.pt")
+    vocab, vocab, "chuckleberryfinn_model_final.pt"
+)
 
 architecture.check_outputs(valid_dataloader, trained_model, vocab, vocab)

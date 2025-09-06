@@ -1510,11 +1510,11 @@ def check_outputs(
     for idx in range(n_examples):
         print("\nExample %d ========\n" % idx)
         b = next(iter(valid_dataloader))
-        print(f"""b: {type(b)} \n{b}""")
+        # print(f"""b: {type(b)} \n{b}""")
         # exit(0)
         rb = Batch(b[0], b[1], pad_idx)
-        print(f">> {rb.src} {rb.src.size()}  {rb.src_mask} {rb.src_mask.size()}")
-        greedy_decode(model, rb.src, rb.src_mask, 64, 0)[0]
+        # print(f">> rb.src={rb.src} rb.src.size()={rb.src.size()}  rb.src.mask={rb.src_mask}  rb.src_mask.size()={rb.src_mask.size()}")
+        # greedy_decode(model, rb.src, rb.src_mask, 64, 0)[0]
 
         src_tokens = [vocab_src.get_itos()[x] for x in rb.src[0] if x != pad_idx]
         tgt_tokens = [vocab_tgt.get_itos()[x] for x in rb.tgt[0] if x != pad_idx]
