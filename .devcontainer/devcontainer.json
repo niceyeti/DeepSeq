@@ -17,7 +17,7 @@
                 },
                 "black-formatter.args": [
                     "--line-length",
-                    "100" // Set your desired line length here
+                    "88" // Set your desired line length here
                 ]
             },
             "extensions": [

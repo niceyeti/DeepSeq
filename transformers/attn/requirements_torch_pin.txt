@@ -8,6 +8,8 @@ torchdata==0.9.0
 # Portalocker 2.8 is an arbitrary requirement of torchdata.
 portalocker~=2.8.0
 torchtext==0.18
+# For printing model summary
+torchinfo==1.8.0
 spacy
 altair
 jupytext

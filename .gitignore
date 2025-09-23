@@ -8,3 +8,6 @@ autograd/resources
 *log
 *venv
 *pt
+**train_lines.txt
+**deletable*
+*pth

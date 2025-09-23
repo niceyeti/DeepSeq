@@ -1,0 +1,34 @@
+<mxfile host="65bd71144e">
+    <diagram id="g52y65K4JWWqF7R7UsAd" name="architecture">
+        <mxGraphModel dx="1412" dy="425" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+            <root>
+                <mxCell id="0"/>
+                <mxCell id="1" parent="0"/>
+                <mxCell id="6" style="edgeStyle=none;html=1;" parent="1" source="2" target="5" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="2" value="SublayerConnection&lt;div&gt;input: x and x_out&lt;/div&gt;&lt;div&gt;x:&amp;nbsp;&lt;/div&gt;&lt;div&gt;block_output dim: 32 x 72 x512&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;block_output = x + dropout(x_out)&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="480" width="440" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="4" value="" style="edgeStyle=none;html=1;" parent="1" source="3" target="2" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="3" value="&lt;div&gt;Input: x, mask&lt;/div&gt;&lt;div&gt;x: 32 x 72 x 512&lt;/div&gt;&lt;div&gt;mask: 32 x 1 x 72&lt;/div&gt;&lt;div&gt;x_out dim: 32 x 72 x 512&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;&lt;span style=&quot;color: rgb(63, 63, 63);&quot;&gt;// norm subtracts mean and divides by stdev&lt;/span&gt;&lt;/div&gt;&lt;div&gt;x_norm = norm(x)&lt;/div&gt;&lt;div&gt;x_out = attn(x, x, x, mask)&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="280" width="440" height="160" as="geometry"/>
+                </mxCell>
+                <mxCell id="8" style="edgeStyle=none;html=1;" parent="1" source="5" target="7" edge="1">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="5" value="Feedforward Network&lt;br&gt;input: x&lt;div&gt;&lt;font color=&quot;#000000&quot;&gt;x dim: 512&lt;br&gt;&lt;/font&gt;&lt;div&gt;hidden layer dim: 2048&amp;nbsp;&lt;/div&gt;&lt;/div&gt;&lt;div&gt;output dim: 512&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="640" width="440" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="7" value="SublayerConnection&lt;div&gt;input: x and x_out&lt;/div&gt;&lt;div&gt;x:&amp;nbsp;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;block_output = x + dropout(x_out)&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                    <mxGeometry x="80" y="800" width="440" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="9" value="Key:&lt;div&gt;32: batch size&lt;/div&gt;&lt;div&gt;72: max padding&lt;/div&gt;&lt;div&gt;512: model dimension (from original paper)&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="-360" y="280" width="360" height="120" as="geometry"/>
+                </mxCell>
+            </root>
+        </mxGraphModel>
+    </diagram>
+</mxfile>
