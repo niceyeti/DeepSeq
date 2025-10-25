@@ -33,7 +33,7 @@ config = {
     # The number of batch iterations to accumulate before calling optimizer.step().
     "accum_iter": 4,
     "num_layers": 2,
-    "d_model": 64,
+    "d_model": 128,
     "d_ff": 2048,
     "h": 8,
     "dropout": 0.1,
@@ -61,7 +61,7 @@ if os.getenv("IS_PROD") == "true":
         "base_lr": 1.0,
         "max_padding": 72,
         "warmup": 3000,
-        "file_prefix": "chuckleberryfinn_model",
+        "file_prefix": "huckfinn",
         "data_path": "./data/huckfinn_utf8.txt",
     }
 

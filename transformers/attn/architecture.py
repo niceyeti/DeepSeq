@@ -1,6 +1,7 @@
 import os
 import itertools
 import random
+import logging
 from typing import Generator as TGenerator
 from typing import Tuple, List
 
@@ -33,15 +34,9 @@ import torchinfo
 # Set to False to skip notebook execution (e.g. for debugging)
 warnings.filterwarnings("ignore")
 
-# def is_interactive_notebook(): return __name__ == "__main__"
 
-
-# def show_example(fn, args=[]): if __name__ == "__main__" and RUN_EXAMPLES:
-#     return fn(*args)
-
-
-# def execute_example(fn, args=[]): if __name__ == "__main__" and RUN_EXAMPLES:
-#     fn(*args)
+logging.basicConfig(level=os.environ.get("LOGLEVEL", "WARNING").upper())
+logger = logging.getLogger()
 
 
 class DummyOptimizer(torch.optim.Optimizer):
@@ -136,13 +131,14 @@ class EncoderLayer(nn.Module):
 
     def forward(self, x, mask):
         "Follow Figure 1 (left) for connections."
-        # print(f"EncoderLayer forward:  x dim {x.size()}  mask dim {mask.size()}")
+        global logger
+        logger.info(f"EncoderLayer forward:  x dim {x.size()}  mask dim {mask.size()}")
         # exit(1)
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
-        # print(f"encoder x dim: {x.size()}")
+        logger.info(f"encoder x dim: {x.size()}")
 
         x_final = self.sublayer[1](x, self.feed_forward)
-        # print(f"encoder x_final dim: {x_final.size()}")
+        logger.info(f"encoder x_final dim: {x_final.size()}")
 
         return x_final
 
@@ -175,10 +171,12 @@ class DecoderLayer(nn.Module):
         # decoder output.
         self.sublayer = clones(SublayerConnection(size, dropout), 3)
 
-    def forward(self, x, memory, src_mask, tgt_mask):
-        "Follow Figure 1 (right) for connections."
+    def forward(self, target, memory, src_mask, tgt_mask):
+        """The decoder always takes as input output target and memory from the
+        encoder's final output. It then runs self-attention before running
+        self+src attention."""
         m = memory
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, tgt_mask))
+        x = self.sublayer[0](target, lambda x: self.self_attn(x, x, x, tgt_mask))
         x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask))
         return self.sublayer[2](x, self.feed_forward)
 
@@ -227,10 +225,11 @@ class EncoderDecoder(nn.Module):
             3) other masking to perform custom training to attend to specific
                tokens for domain oriented tasks
         """
-        # print(f"encdec src: {src.size()}  {src.type()}")
-        # print(f"encdec tgt: {tgt.size()}  {tgt.type()}")
-        # print(f"encdec src_mask: {src_mask.size()}  {src_mask.type()}")
-        # print(f"encdec tgt_mask: {tgt_mask.size()}  {tgt_mask.type()}")
+        global logger
+        logger.info(f"encdec src: {src.size()}  {src.type()}")
+        logger.info(f"encdec tgt: {tgt.size()}  {tgt.type()}")
+        logger.info(f"encdec src_mask: {src_mask.size()}  {src_mask.type()}")
+        logger.info(f"encdec tgt_mask: {tgt_mask.size()}  {tgt_mask.type()}")
 
         return self.decode(self.encode(src, src_mask), src_mask, tgt, tgt_mask)
 
@@ -240,7 +239,10 @@ class EncoderDecoder(nn.Module):
         @src:
         @src_mask:
         """
-        # print(f"encdec encoder layer: src.size()={src.size()} src_mask.size()={src_mask.size()}")
+        global logger
+        logger.info(
+            f"encdec encoder layer: src.size()={src.size()} src_mask.size()={src_mask.size()}"
+        )
         return self.encoder(self.src_embed(src), src_mask)
 
     def decode(self, memory, src_mask, tgt, tgt_mask):
@@ -252,7 +254,8 @@ class EncoderDecoder(nn.Module):
         @tgt_mask: size is coupled to tgt size, and is a triangular matrix whose elements above the diagonal are true.
           The size per @tgt is (1 x c x c)
         """
-        print(
+        global logger
+        logger.info(
             f"encdec decoder layer: memory.size()={memory.size()} src_mask.size()={src_mask.size()} tgt.size()={tgt.size()} tgt_mask.size()={tgt_mask.size()}"
         )
 
@@ -260,8 +263,13 @@ class EncoderDecoder(nn.Module):
 
 
 def subsequent_mask(size):
-    """Mask out subsequent positions. Output embeddings are offset by one
-    position."""
+    """Returns a tensor of size (1 x @size x @size). Mask out subsequent positions.
+    Output embeddings are offset by one position. This returns an upper
+    triangular matrix of booleans whose diagonal and below-diagonal entries are
+    False."""
+
+    # Note: the '1' first dim is inferred by torch to be for batch, i.e.
+    # torch.ones((1,2,2)) is '[[[1, 1],[0, 1]]]'
     attn_shape = (1, size, size)
     # Creates an upper triangular matrix whose diagonal is zero; the 'diagonal'
     # param indicates how many diagonals above the main diagonal to set to zero.
@@ -300,23 +308,39 @@ def example_mask():
 
 def attention(query, key, value, mask=None, dropout=None):
     """
-    An attention function can be described as mapping a query and a set of
-    key-value pairs to an output, where the query, keys, values, and output are
-    all vectors.  The output is computed as a weighted sum of the values, where
-    the weight assigned to each value is computed by a compatibility function of
-    the query with the corresponding key.
+    Per the masking issue: it might be worth looking at https://github.com/harvardnlp/annotated-transformer/issues/137.
+    There is a reported issue with make_std_mask. The first-principles definition
+    of std-mask has not been reviewed / is the most opaque part of this code.
+
+    An attention function maps a query and a set of key-value pairs to an
+    output, where the query, keys, values, and output are all vectors.  The
+    output is computed as a weighted sum of the values, where the weight
+    assigned to each value is computed by a compatibility function of the query
+    with the corresponding key.
 
     We call our particular attention "Scaled Dot-Product Attention". The input
     consists of queries and keys of dimension $d_k$, and values of dimension
     $d_v$.  We compute the dot products of the query with all keys, divide each
     by $sqrt{d_k}$, and apply a softmax function to obtain the weights on the
     values.
+
+    Args:
+        * query: 1 x h x seq_len x b
+        * key:   1 x h x seq_len x b
+        * value: 1 x h x seq_len x b
+        * mask:
+        * dropout: if any
     """
+    global logger
+    # Get the dimensionality d_head
     d_k = query.size(-1)
-    scores = torch.matmul(query, key.transpose(-2, -1)) / math.sqrt(d_k)
-    # TODO: masked_fill is required during training but fails when I try to run
-    # my model for generation, and I need to understand why. print(f"SCORES
-    # SIZE: {scores.size()} MASK SIZE: {mask.size()} {mask}")
+    k_t = key.transpose(-2, -1)
+
+    logger.info(
+        f"In attn: d_k={d_k} q={query.size()} k={key.size()} k_t=k.transpose(-2,-1)={k_t.size()}"
+    )
+
+    scores = torch.matmul(query, k_t) / math.sqrt(d_k)
 
     """
     Output during training:
@@ -342,11 +366,34 @@ def attention(query, key, value, mask=None, dropout=None):
     """
 
     if mask is not None:
-        # mask.size=torch.Size([32, 1, 1, 72]) scores=torch.Size([1, 8, 1, 2304])
-        # RuntimeError: The size of tensor a (72) must match the size of tensor b (2304) at non-singleton dimension 3
-        # Note that 72 * 32 = 2304
-        print(f"mask.size={mask.size()} scores={scores.size()}")
-        scores = scores.masked_fill(mask == 0, -1e9)
+        # mask.size=torch.Size([32, 1, 1, 72]) scores=torch.Size([1, 8, 1,
+        # 2304]) RuntimeError: The size of tensor a (72) must match the size of
+        # tensor b (2304) at non-singleton dimension 3 Note that 72 * 32 = 2304
+        # logger.info(f"mask.size={mask.size()} scores={scores.size()}")
+        #
+        # Set masked scores to negative large-numbers, such that their output
+        # probs are effectively zero.
+
+        old_shape = mask.shape
+        if mask.size()[-1] != scores.size()[-1]:
+            mask = mask.view(1, 1, 1, -1)
+            logger.warning(
+                f"mask size {old_shape} != scores size {scores.size()}, reshaped to {mask.size()}. This is currently needed during inference because ys has no batch dim."
+            )
+
+        logger.warning(
+            f"q={query.size()} k={key.size()} k_t={k_t.size()} v={value.size()}"
+            + f"  scores={scores.size()} mask={mask.size()} mask_old_shape={old_shape}"
+        )
+
+        # Bug cope: force the mask to satisfy size reqs, without knowing what I'm doing a priori...
+        # if mask.shape[-1] == scores.shape[-1]:
+        #     mask = mask.view(1, 1, 1, -1)
+
+        # TODO: this is bug cope due to a bug with mismatched dimensions at some step in the model.
+        # if mask.shape[-1] == scores.shape[-1]:
+        scores = scores.masked_fill(mask == False, -1e9)
+        # pass
     p_attn = scores.softmax(dim=-1)
     if dropout is not None:
         p_attn = dropout(p_attn)
@@ -357,14 +404,15 @@ def attention(query, key, value, mask=None, dropout=None):
 class MultiHeadedAttention(nn.Module):
     """Multihead attention allows the model to jointly attend to information from
     different representation subspaces at different positions. With a single
-    attention head, averaging inhibits this.
+    attention head, averaging inhibits this. The linear weights on each Q, K, V
+    weight matrix are size d_model, but are simply transformed to the space of
+    the heads when needed.
 
-        Multihead(Q,K,V) = Concact(head_1, head_2, ... head_h) * W^0 where
+        Multihead(Q,K,V) = Concat(head_1, head_2, ... head_h) * W^0 where
         head_i = Attention(QW_iq, KW_ik, VW_iv) where W_iq in R[d_model x d_k],
         W_ik in R[d_model x d_k], and W_iv in R[h*d_v x d_model] Basically, the
         matrices are the sizes of the original matrices scaled down by h, and
         such that the row/col math works out the same.
-
     """
 
     def __init__(self, h, d_model, dropout=0.1):
@@ -376,20 +424,49 @@ class MultiHeadedAttention(nn.Module):
         # We assume d_v always equals d_k
         self.d_k = d_model // h
         self.h = h
-        # Create 3 linear layers for each of Q, K, and V matrices. These are the
-        # weights by which the linear projection is performed for multihead
-        # attention.
-        self.linears = clones(nn.Linear(d_model, d_model), 3)
+        # Create 3 linear layers for each of Q, K, and V matrices, plus one for
+        # the final output, 4 total. These are the weights by which the linear
+        # projection is performed for multihead attention.
+        self.linears = clones(nn.Linear(d_model, d_model), 4)
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
 
+    def original_forward(self, query, key, value, mask=None):
+        """"""
+        if mask is not None:
+            # Same mask applied to all h heads.
+            mask = mask.unsqueeze(1)
+        nbatches = query.size(0)
+
+        # 1) Do all the linear projections in batch from d_model => h x d_k
+        query, key, value = [
+            lin(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+            for lin, x in zip(self.linears, (query, key, value))
+        ]
+
+        # 2) Apply attention on all the projected vectors in batch.
+        x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
+
+        # 3) "Concat" using a view and apply a final linear.
+        x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_k)
+        del query
+        del key
+        del value
+        return self.linears[-1](x)
+
     def forward(self, query, key, value, mask=None):
-        "Implements Figure 2"
+        """Implements Figure 2
+
+        TODO: review transpose operations, not sure this issue is valid or not but reflects
+        similar confusion: https://github.com/harvardnlp/annotated-transformer/issues/118.
+        """
+        # return self.original_forward(query, key, value, mask)
+
         if mask is not None:
             # Same mask applied to all h heads. Unsqueeze inserts a new
             # dimension a single empty entry at passed index. Example: foo =
             # [2,3]  => foo.unsqueeze(0) = [[2,3]] size=(1,2),  and
-            # foo.unsqueeze(1) = [[2],[3] size=(2x1)
+            # foo.unsqueeze(1) = [[2],[3]] size=(2x1)
             mask = mask.unsqueeze(1)
         nbatches = query.size(0)
 
@@ -398,22 +475,83 @@ class MultiHeadedAttention(nn.Module):
         # run through a linear model, as shown in many tutorials, resulting in
         # the final query, key, and value matrices.
 
-        # Leaving for reference: the "annotated transformer" source for this
-        # code had a bug in which they were creating four linear layers but only
-        # using three. This check detects this in case there was some FUTURE.
+        # query, key, value = [
+        #     lin(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+        #     # TODO: this appears to be a bug in the original paper source: four
+        #     # linear layers are initialized, but only three are used via zip
+        #     # which only ranges over the three query, key, value items. Zip only
+        #     # iterates up to the smaller of two iterables.
+        #     for lin, x in zip(self.linears, (query, key, value))
+        # ]
         #
-        # assert len(self.linears) == len( (query, key, value) ), f"Expected
-        #     linears ({len(self.linears)}) to equal number of q k and v
-        # ({len((query, key, value))})"
+        # The above is a compact way to write these linear ops on the heads, but
+        # enumeration per below allows tracking the algebraic dimensions.
 
-        query, key, value = [
-            lin(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
-            # TODO: this appears to be a bug in the original paper source: four
-            # linear layers are initialized, but only three are used via zip
-            # which only ranges over the three query, key, value items. Zip only
-            # iterates up to the smaller of two iterables.
-            for lin, x in zip(self.linears, (query, key, value))
-        ]
+        global logger
+
+        # W_q * q   whose dimensions are   (d_model x d_model) * (b x max_padding x d_model)
+        # More precisely, W_q in calculations is (d_output x d_input) and its input will
+        # be transformed to (d_input x b * max_padding).
+        W_q = self.linears[0]
+        logger.info(
+            f"W_q={W_q.weight.size()} query={query.size()} nbatches={nbatches} d_k={self.d_k}"
+        )
+        # W_q * q   whose dimensions are   (d_model x d_model) * (b x max_padding x d_model)
+        #
+        # Note that for torch linear layers, the size constraint per matrix multiplication is
+        # per the last dimension, d_model. So the above math is misleading if intepreted per
+        # textbook linear algebra. The linear size (d_model x d_model) per implementation is
+        # (out_features, in_features) respectively for W. The input tensor of size (b x seqlen x d_model)
+        # is internally reshaped to (b * seqlen x d_model). All multiplication per the linear
+        # layer and input tensors are then (b * seqlen x d_model) * (d_model x d_model), resulting
+        # in (b * seqlen x d_model), where technically this "d_model" is d_model_output_features,
+        # which just happens to match (512) of input features. The internal bias vector is size
+        # d_output (so again, 512 of d_model) and is added to the output. However, it too is reshaped
+        # or rather re-applied to all b segments of output, (b x 512). The simplest way to look at
+        # this is simply that the leading dimension is assumed to the batch size, for which the
+        # formal mult ops are simply repeated for these dimensions, as the bias vector addition
+        # demonstrates most simply.
+        #
+        # Small example:
+        # lin = Linear(input_features, output_features)
+        # # input need only agree with lin per input_features
+        # out = lin(torch.rand(32, input_features))
+        # # out size is (32 x 512)
+        # out = lin(torch.rand(128, 32, input_features))
+        # # out size is (128 x 32 x 512)
+        # out.view(128, -1, 8, 512 // 8)
+        # # view is
+        #
+        #  Wq is (b x max_padding x d_out_features)   from   Wq (32 x 72 x 512)   and   q_out (32 x 72 x 8 x 64)
+        Wq = W_q(query)
+        # -1 tells torch to calculate the size of that dimension per the others. Hence
+        # this results in the q_out dim listed above, where only the last dimensions
+        # changes to 8 x 64, effectively meaning that each d_model vector is just
+        # broken into 8 different sections with independent weights.
+        q_out = Wq.view(nbatches, -1, self.h, self.d_k)
+        logger.info(f"Wq={Wq.size()}  q_out={q_out.size()}")
+        query = q_out.transpose(1, 2)
+        logger.info(f"query={query.size()}")
+
+        # W_k * k   whose dimensions are   (d_model x d_model) * (d_model x)
+        W_k = self.linears[1]
+        logger.info(f"W_k={W_k.weight.size()} key={key.size()} nbatches={nbatches}")
+        Wk = W_k(key)
+        k_out = Wk.view(nbatches, -1, self.h, self.d_k)
+        logger.info(
+            f"Wk={Wk.size()}  k_out={k_out.size()} (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))"
+        )
+        key = k_out.transpose(1, 2)
+        logger.info(f"key={key.size()} (via k_out.transpose(1, 2))")
+
+        # W_v * v   whose dimensions are   (d_model x d_model) * (d_model x)
+        W_v = self.linears[2]
+        logger.info(f"W_v={W_v.weight.size()} value={value.size()} nbatches={nbatches}")
+        Wv = W_v(value)
+        v_out = Wv.view(nbatches, -1, self.h, self.d_k)
+        logger.info(f"Wv={Wv.size()}  v_out={v_out.size()}")
+        value = v_out.transpose(1, 2)
+        logger.info(f"value={value.size()}")
 
         # 2) Apply attention on all the projected vectors in batch. The second
         # return value self.attn (stored here for visualization) contains the
@@ -422,6 +560,7 @@ class MultiHeadedAttention(nn.Module):
         # keys, before multiplication/transformation by V back into the model
         # dim-space.
         x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
+        logger.info(f"x={x.size()} self.attn={self.attn.size()}")
 
         # 3) "Concat" using a view and apply a final linear.
         #
@@ -433,7 +572,11 @@ class MultiHeadedAttention(nn.Module):
         del query
         del key
         del value
-        return self.linears[-1](x)
+        final_out = self.linears[-1](x)
+        # final_out = (32 x 72 x 512)
+        logger.info(f"x reshaped={x.size()} final_out={final_out.size()}")
+
+        return final_out
 
 
 class PositionwiseFeedForward(nn.Module):
@@ -582,7 +725,8 @@ def inference_test():
             [ys, torch.empty(1, 1).type_as(src.data).fill_(next_word)], dim=1
         )
 
-    print("Example Untrained Model Prediction:", ys)
+    global logger
+    logger.info("Example Untrained Model Prediction:", ys)
 
 
 def run_tests():
@@ -607,7 +751,10 @@ class Batch:
 
     @staticmethod
     def make_std_mask(tgt, pad):
-        "Create a mask to hide padding and future words."
+        """Create a mask to hide padding and future words.
+
+        TODO: there is a reported bug in this code, need to review. https://github.com/harvardnlp/annotated-transformer/issues/137
+        """
         tgt_mask = (tgt != pad).unsqueeze(-2)
         tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data)
         return tgt_mask
@@ -660,7 +807,7 @@ def run_epoch(
         if i % 40 == 1 and (mode == "train" or mode == "train+log"):
             lr = optimizer.param_groups[0]["lr"]
             elapsed = time.time() - start
-            print(
+            logger.info(
                 (
                     "Epoch Step: %6d | Accumulation Step: %3d | Loss: %6.2f "
                     + "| Tokens / Sec: %7.1f | Learning Rate: %6.1e"
@@ -743,9 +890,6 @@ def example_learning_schedule():
         .encode(x="step", y="Learning Rate", color="model_size:warmup:N")
         .interactive()
     )
-
-
-# example_learning_schedule()
 
 
 class LabelSmoothing(nn.Module):
@@ -881,23 +1025,38 @@ class SimpleLossCompute:
 
 
 def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
-    memory = model.encode(src, src_mask)
-    ys = torch.zeros(1, 1).fill_(start_symbol).type_as(src.data)
-    for i in range(max_len - 1):
-        print(
-            f"memory.size()={memory.size()}, src_mask={src_mask.size()} ys={ys.size()}"
-        )
-        ys_mask = subsequent_mask(ys.size(1)).type_as(src.data)
+    """greedy_decode encodes the entire input sequence and then repeatedly samples
+    the argmax term at each time step from the decoder.
+    """
 
+    global logger
+    memory = model.encode(src, src_mask)
+    # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
+    logger.warning(
+        f"memory.size()={memory.size()}, src={src.size()} src_mask={src_mask.size()}"
+    )
+
+    # Initially ys is empty except for the start symbol. With the encoder loaded
+    # with input, we can then predict one token at a time, concatenating each
+    # subsequent token onto ys and repeating.
+    ys = torch.zeros(1, 1).fill_(start_symbol).type_as(src.data)
+    for _ in range(max_len - 1):
+        # At each time step, mask all subsequent terms to prevent the model looking ahead.
+        ys_mask = subsequent_mask(ys.size(1)).type_as(src.data)
+        # ys=torch.Size([1, 2]) ys_mask=torch.Size([1, 2, 2])
         # TODO: this is where to implement beam search. Rather than only look
         # one word ahead, probe using beam search for subsequences of max value.
         out = model.decode(memory, src_mask, ys, ys_mask)
+        logger.warning(f"ys={ys.size()} ys_mask={ys_mask.size()} out={out.size()}")
+
         prob = model.generator(out[:, -1])
         _, next_word = torch.max(prob, dim=1)
+        logger.info(f">>> next_word size: {next_word.size()}")
         next_word = next_word.data[0]
         ys = torch.cat(
             [ys, torch.zeros(1, 1).type_as(src.data).fill_(next_word)], dim=1
         )
+        logger.info(f"Next ys: {ys.size()}")
     return ys
 
 
@@ -1090,6 +1249,11 @@ def collate_batch(
             ],
             0,
         )
+
+        global logger
+        if max_padding - len(processed_src) < 0:
+            logger.warning("Overwrite occurs for negative value of a padding - len")
+        logger.info
         src_list.append(
             # warning - overwrites values for negative values of padding - len
             pad(
@@ -1101,6 +1265,8 @@ def collate_batch(
                 value=pad_id,
             )
         )
+        if max_padding - len(processed_tgt) < 0:
+            logger.warning("Overwrite occurs for negative value of a padding - len")
         tgt_list.append(
             pad(
                 processed_tgt,
@@ -1397,7 +1563,7 @@ def my_train_worker(
         f"Training params: pad_idx={pad_idx} d_model={d_model} num_layers={num_layers} num_epochs={num_epochs} vocab-len={len(vocab)}"
     )
 
-    model = make_model(len(vocab), len(vocab), N=num_layers)
+    model = make_model(len(vocab), len(vocab), N=num_layers, d_model=d_model)
     module = model
     is_main_process = True
 
@@ -1645,13 +1811,13 @@ def check_outputs(
     eos_string="</s>",
     max_len=72,
 ):
+    global logger
     results = [()] * n_examples
     for idx in range(n_examples):
         print("\nExample %d ========\n" % idx)
         b = next(iter(valid_dataloader))
-        # print(f"""b: {type(b)} \n{b}""") exit(0)
         rb = Batch(b[0], b[1], pad_idx)
-        print(
+        logger.info(
             f">> rb.src={rb.src} rb.src.size()={rb.src.size()} rb.src_mask.size()={rb.src_mask.size()}"
         )
         # rb.src.mask={rb.src_mask}  rb.src_mask.size()={rb.src_mask.size()}")
@@ -1662,9 +1828,15 @@ def check_outputs(
 
         print("Source Text (Input)        : " + " ".join(src_tokens).replace("\n", ""))
         print("Target Text (Ground Truth) : " + " ".join(tgt_tokens).replace("\n", ""))
-        model_out = greedy_decode(
-            model, rb.src, rb.src_mask, max_len, vocab_src["<s>"]
-        )[0]
+        ys = greedy_decode(
+            model,
+            rb.src,
+            rb.src_mask,
+            max_len,
+            vocab_src["<s>"],
+        )
+        model_out = ys[0]
+        logger.warning(f"ys={ys.size()} model_out={model_out.size()}")
         model_txt = (
             " ".join(
                 [vocab_tgt.get_itos()[x] for x in model_out if x != pad_idx]
@@ -1673,6 +1845,7 @@ def check_outputs(
         )
         print("Model Output               : " + model_txt.replace("\n", ""))
         results[idx] = (rb, src_tokens, tgt_tokens, model_out, model_txt)
+        exit(1)
     return results
 
 

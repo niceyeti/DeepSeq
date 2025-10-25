@@ -10,7 +10,9 @@ import torch
 
 file_prefix = os.getenv("FILE_PREFIX", "")
 if not file_prefix:
-    raise ValueError("Set FILE_PREFIX to the prefix of the model's files to load.")
+    raise ValueError(
+        "Set FILE_PREFIX to the prefix of the model's files to load, i.e. ."
+    )
 
 model_path = os.getenv("MODEL_PATH", "")
 if not model_path:

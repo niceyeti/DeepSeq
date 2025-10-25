@@ -1,9 +1,15 @@
 <mxfile host="65bd71144e">
     <diagram id="g52y65K4JWWqF7R7UsAd" name="architecture">
-        <mxGraphModel dx="1412" dy="425" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+        <mxGraphModel dx="1844" dy="597" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
+                <mxCell id="14" style="edgeStyle=none;html=1;" edge="1" parent="1" source="10" target="13">
+                    <mxGeometry relative="1" as="geometry"/>
+                </mxCell>
+                <mxCell id="10" value="Encoder" style="rounded=0;whiteSpace=wrap;html=1;verticalAlign=top;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="240" width="520" height="760" as="geometry"/>
+                </mxCell>
                 <mxCell id="6" style="edgeStyle=none;html=1;" parent="1" source="2" target="5" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
@@ -25,8 +31,17 @@
                 <mxCell id="7" value="SublayerConnection&lt;div&gt;input: x and x_out&lt;/div&gt;&lt;div&gt;x:&amp;nbsp;&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;&lt;div&gt;block_output = x + dropout(x_out)&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
                     <mxGeometry x="80" y="800" width="440" height="120" as="geometry"/>
                 </mxCell>
-                <mxCell id="9" value="Key:&lt;div&gt;32: batch size&lt;/div&gt;&lt;div&gt;72: max padding&lt;/div&gt;&lt;div&gt;512: model dimension (from original paper)&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                <mxCell id="9" value="Key:&lt;div&gt;32: batch size&lt;/div&gt;&lt;div&gt;72: max padding / len&lt;/div&gt;&lt;div&gt;512: model dimension (from original paper)&lt;/div&gt;&lt;div&gt;&lt;br&gt;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
                     <mxGeometry x="-360" y="280" width="360" height="120" as="geometry"/>
+                </mxCell>
+                <mxCell id="11" value="x_original: input sequences up to max len (max padding)&lt;div&gt;x_seq: the input word sequences as ints, via Vocab V&lt;br&gt;x: the input int sequences as embedding vectors, passed to the model&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="120" width="520" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="12" value="t_original: target output sequences up to max len (max padding)&lt;div&gt;t_seq: the target output word sequences as ints, via Vocab V&lt;br&gt;o: the target output int sequences as embedding vectors, passed to the model&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="640" y="120" width="520" height="80" as="geometry"/>
+                </mxCell>
+                <mxCell id="13" value="Output: &quot;memory&quot;&lt;div&gt;Dim: 32 x 72 x 512&amp;nbsp;&lt;/div&gt;&lt;div&gt;(b x max_len x d_model)&amp;nbsp;&lt;/div&gt;" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+                    <mxGeometry x="40" y="1040" width="520" height="80" as="geometry"/>
                 </mxCell>
             </root>
         </mxGraphModel>

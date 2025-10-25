@@ -12,3 +12,9 @@ rebuild-venv:
 	python3 -m venv venv
 	source venv/bin/activate ; \
 	pip3 install -r requirements_torch_pin.txt
+
+
+# For diagnostics related to the issue with mask dimensionality.
+.PHONY: diagnose
+diagnose:
+	FILE_PREFIX=huckfinn MODEL_PATH=huckfinn_final.pt python check_outputs.py 
