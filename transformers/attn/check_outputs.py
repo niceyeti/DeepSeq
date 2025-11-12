@@ -11,7 +11,7 @@ import torch
 file_prefix = os.getenv("FILE_PREFIX", "")
 if not file_prefix:
     raise ValueError(
-        "Set FILE_PREFIX to the prefix of the model's files to load, i.e. ."
+        "Set FILE_PREFIX to the prefix of the model's files to load, i.e. HUCKFINN_MODEL to load 'HUCKFINN_MODEL.json'."
     )
 
 model_path = os.getenv("MODEL_PATH", "")

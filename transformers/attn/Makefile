@@ -18,3 +18,12 @@ rebuild-venv:
 .PHONY: diagnose
 diagnose:
 	FILE_PREFIX=huckfinn MODEL_PATH=huckfinn_final.pt python check_outputs.py 
+
+.PHONY: test-outputs
+test-outputs:
+	source venv/bin/activate && \
+	BEAM_LENGTH=12 \
+	LOGLEVEL=INFO \
+	FILE_PREFIX=huckfinn \
+	MODEL_PATH=huckfinn_final.pt \
+		python check_outputs.py

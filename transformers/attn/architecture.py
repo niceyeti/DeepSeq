@@ -2,33 +2,34 @@ import os
 import itertools
 import random
 import logging
-from typing import Generator as TGenerator
-from typing import Tuple, List
-
-from os.path import exists
-import torch
-import torch.nn as nn
-from torch.nn.functional import log_softmax, pad
 import math
 import copy
 import time
+import warnings
+from dataclasses import dataclass
+from typing import Generator as TGenerator, Tuple, List
+from pathlib import Path
+
+import torch
+import torch.nn as nn
+from torch.nn.functional import log_softmax, pad
 from torch.optim.lr_scheduler import LambdaLR
-import pandas as pd
-import altair as alt
 from torchtext.data.functional import to_map_style_dataset
 from torch.utils.data import DataLoader
 from torchtext.vocab import Vocab
 from torchtext.vocab import build_vocab_from_iterator
 import torchtext.datasets as datasets
-import spacy
-from spacy import Language
-import GPUtil
-import warnings
 from torch.utils.data.distributed import DistributedSampler
 import torch.distributed as dist
 import torch.multiprocessing as mp
 from torch.nn.parallel import DistributedDataParallel as DDP
 import torchinfo
+
+import pandas as pd
+import altair as alt
+import spacy
+from spacy import Language
+import GPUtil
 
 
 # Set to False to skip notebook execution (e.g. for debugging)
@@ -1026,7 +1027,12 @@ class SimpleLossCompute:
 
 def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
     """greedy_decode encodes the entire input sequence and then repeatedly samples
-    the argmax term at each time step from the decoder.
+    the argmax term at each time step from the decoder. For the purposes of
+    language prediction within a single language, this is effectively a
+    inference check on an autoencoder, taking in "the quick brown fox", encoding
+    it, and then running the decoder one word at a time to create the same
+    sequence. This is roughly similar to summarization, though the exact target
+    output is the original sentence.
     """
 
     global logger
@@ -1044,9 +1050,16 @@ def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
         # At each time step, mask all subsequent terms to prevent the model looking ahead.
         ys_mask = subsequent_mask(ys.size(1)).type_as(src.data)
         # ys=torch.Size([1, 2]) ys_mask=torch.Size([1, 2, 2])
-        # TODO: this is where to implement beam search. Rather than only look
-        # one word ahead, probe using beam search for subsequences of max value.
+        # >>>> memory=torch.Size([32, 72, 256]) src_mask=torch.Size([32, 1, 72]) ys=torch.Size([1, 68]) ys_mask=torch.Size([1, 68, 68])
+        # print(
+        #     f">>>> memory={memory.size()} src_mask={src_mask.size()} ys={ys.size()} ys_mask={ys_mask.size()}"
+        # )
+
+        # @out is size (b x cur_len x d_model), where cur_len is the current len
+        # of the sequence as it is extended one at a time. Note it is the same
+        # size as ys, since we haven't predicted the next word until below.
         out = model.decode(memory, src_mask, ys, ys_mask)
+        # WARNING:root:ys=torch.Size([1, 68]) ys_mask=torch.Size([1, 68, 68]) out=torch.Size([1, 68, 256])
         logger.warning(f"ys={ys.size()} ys_mask={ys_mask.size()} out={out.size()}")
 
         prob = model.generator(out[:, -1])
@@ -1058,6 +1071,208 @@ def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
         )
         logger.info(f"Next ys: {ys.size()}")
     return ys
+
+
+def beam_decode(
+    model: EncoderDecoder, src, src_mask, max_len, start_symbol, beam_length
+) -> List[torch.Tensor]:
+    """beam_decode is the same as greedy_decode except that we sample the top
+    @beam_length outputs as @ys. That is, (1) encode the entire provided input
+    sequence, and (2) predict outputs; populate a beam of size @beam_length, then
+    run again and replace/add new sequence to the beam that are higher
+    probability.
+
+    Returns a list of tensors sorted from most probable to least. No probs are
+    included since there is no such requirement. Each tensor contains the word
+    ids, by which the actual words can be retrieved from the vocab of the model.
+
+    The definition of probability in this context is the
+    probability of the entire sequence, such that the highest probability seq
+    has prob P*. Note that each addition to the beam need not increase the
+    current length of all predicted sequences. On the first round, the top
+    @beam_length output words will always populate the beam; thereafter, some of
+    these could remain in the beam if they have arbitrarily higher probability
+    than other alternative sequence extensions. The output probabilities
+    are one-step probs, not full sequence probabilities.
+
+    1) Initially, populate beam with top-k output words
+    2) For each item in beam, extend by one word (d=1), and assign the highest probability
+       one to the current word-sequence's probability, and append the word.
+        * Modification: for d>1, continue to sample and replace
+
+
+    """
+
+    # TODO: update me with type info when their structure is understood.
+    # Or, remove and replace with tuple if local enough.
+    @dataclass
+    class BeamItem:
+        # The word sequence.
+        ys: torch.Tensor
+        # The accumulated probability for this sequence.
+        prob: float
+
+    global logger
+    memory = model.encode(src, src_mask)
+    # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
+    logger.info(
+        f"memory.size()={memory.size()}, src={src.size()} src_mask={src_mask.size()}"
+    )
+
+    # TODO: batchify these ops: intuition says I'm doing this wastefully, but
+    # could run inference much faster for a batch of items in the beam at once.
+    # Beam search seems extremely amenable to very fast batchification, whereby
+    # long beams could be decoded all at once, instead of through iteration.
+
+    ys = torch.zeros(1, 1).fill_(start_symbol).type_as(src.data)
+    # The beam is a list of tensors and their associated probabilities.
+    # Initialized to the start_symbol, with prob chosen such that subsequent
+    # probs accumulate correctly.
+    beam: List[BeamItem] = [BeamItem(ys=ys, prob=-1.0)]
+
+    # TODO: revise stopping criteria, i.e. when the whole beam's items achieve
+    # some length or are all capped with EOS pads.
+    for _ in range(20):
+        # For each word in the beam, run the decoder to get its top-k most
+        # likely next outputs, appending this to the beam. After predicting for
+        # all candidate terms and appending their top-k outputs, sort and
+        # truncate the beam back to beam-length. K and beam-length are separate
+        # parameters, where beam supports total scope and k is effectively the
+        # search radius around candidate words.
+        #
+        #  TODO: replace beam with a heap to avoid large beam and sorting.
+        # TOD: replace deepcopy with a more efficient pattern when code paths harden. This is cope to prevent the infinite loop of appending
+        # to the beam while iterating it.
+        next_beam = []
+        for beam_item in beam:
+            # At each time step, mask all subsequent terms to prevent the model looking ahead.
+            ys_mask = subsequent_mask(beam_item.ys.size(1)).type_as(src.data)
+            # ys=torch.Size([1, 2]) ys_mask=torch.Size([1, 2, 2])
+
+            # TODO: input to the decoder is given as (1 x seqlen), where b=1.
+            # The batch size b could easily be used to support decoding batches
+            # of the beam at a time, more efficiently than through iteration.
+
+            # Hybrid beam with greedy depth search:
+            # - for each item in the beam
+            # - run decoder greedily for d steps, i.e. repeat d times: `next_word = decode(next_word)`
+            # - return max_prob, and arg_max sequence for this item to add to beam
+            #
+            # Other alterations are possible, such as backing up the 'value' of each word per
+            # an average over its successors under some strategy, a la Monte Carlo sampling.
+
+            # ys=torch.Size([1, 2]) ys_mask=torch.Size([1, 2, 2])
+            # >>>> memory=torch.Size([32, 72, 256]) src_mask=torch.Size([32, 1, 72]) ys=torch.Size([1, 68]) ys_mask=torch.Size([1, 68, 68])
+            # print(
+            #     f">>>> memory={memory.size()} src_mask={src_mask.size()} ys={ys.size()} ys_mask={ys_mask.size()}"
+            # )
+
+            # @out is size (b x cur_len x d_model), where cur_len is the current
+            # len of the sequence as it is extended one at a time. Note it is
+            # the same size as ys, since we haven't predicted the next word
+            # until below.
+            out = model.decode(memory, src_mask, beam_item.ys, ys_mask)
+            logger.warning(
+                f"ys={beam_item.ys.size()} ys_mask={ys_mask.size()} out={out.size()}"
+            )
+            prob = model.generator(out[:, -1])
+            # Retrieve top beam-length max next-words. By the pigeonhole
+            # principle, this ensures total coverage of possible next-best
+            # values. You could implement heuristics here to weight k by current
+            # term's likelihood. The sorted=False is since the beam is sorted later.
+            #
+            # probs is dim and next_word_indices is ____.
+            (probs, next_word_indices) = torch.topk(
+                prob, k=beam_length, dim=1, sorted=False
+            )
+            logger.info(
+                f">>> probs={probs.size()} next_word_indices={next_word_indices.size()}"
+            )
+            # TODO: loosely, this is where we could combine beam length b and
+            # depth-first search depth d, as follows. For each item in the beam,
+            # decode twice forward: find the top-k most likely words for the
+            # current item, then for each of these, probe again to find the most
+            # likely word sequence of length d (2, 3, 4...). This is from
+            # structured prediction, by which b and d can be calibrated for
+            # efficiency but also heuristic optimality, to help discover
+            # higher-likelihood sequences that are hidden a few steps ahead.
+            # This is the same as any tree search or value-backup, accumulate a
+            # value and store back pointers. Also note this search could be
+            # weighted by probs, to provide slightly better performance.
+
+            # Extend the beam with the top-k next-terms and their probabilities.
+            #
+            # TODO: I'm foggy on log-softmax, which is the output of the
+            # generator. The probs are negative values, and the largest (nearest
+            # zero) is the highest prob. Likewise, log-prob addition represents
+            # multiplication back in non-log space, hence adding these
+            # cumulatively represents the total sequence prob, which is a
+            # product.
+
+            logger.info(f"LEN: {len(list(zip(probs, next_word_indices)))}")
+
+            for prob, next_word_index in zip(probs, next_word_indices):
+                logger.info(f">>> next_word_index size: {next_word_index.size()}")
+                next_word = next_word_index.data[0]
+                next_ys = torch.cat(
+                    [
+                        beam_item.ys,
+                        torch.zeros(1, 1).type_as(src.data).fill_(next_word),
+                    ],
+                    dim=1,
+                )
+                logger.info(f"Next ys: {next_ys.size()}")
+
+                # TODO: do not append, or rather do not reprocess/decode when
+                # next word is the EOS symbol, terminating the sequence. There
+                # are multiple questions here such as if terminated sequences
+                # should remain in the beam, or search should continue without
+                # them, while keeping them separately.
+                next_beam.append(BeamItem(ys=next_ys, prob=prob + beam_item.prob))
+
+        # TODO: per other TODOs, optimize beam/next_beam redundancy, and use a heap/pque.
+        beam = next_beam
+        beam = sorted(beam, key=lambda beam_item: beam_item.prob)
+        beam = beam[:beam_length]
+
+    # TODO: return whole beam and print all sequences.
+    return beam[0].ys
+
+    # # Initially populate the beam using the original code for one step.
+
+    # # For each item in the beam, extend by one step (d=1) and update
+    # # probabilities in the beam per the new max values. Process all items in the
+    # # beam before updating the beam itself: continually append the new
+    # # probabilities, then sort the beam and truncate to beam length again.
+    # # Then, repeat the process.
+
+    # # Initially ys is empty except for the start symbol. With the encoder loaded
+    # # with input, we can then predict one token at a time, concatenating each
+    # # subsequent token onto ys and repeating.
+    # ys = torch.zeros(1, 1).fill_(start_symbol).type_as(src.data)
+    # for _ in range(max_len - 1):
+    #     # At each time step, mask all subsequent terms to prevent the model looking ahead.
+    #     ys_mask = subsequent_mask(ys.size(1)).type_as(src.data)
+    #     # ys=torch.Size([1, 2]) ys_mask=torch.Size([1, 2, 2])
+    #     # TODO: this is where to implement beam search. Rather than only look
+    #     # one word ahead, probe using beam search for subsequences of max value.
+    #     out = model.decode(memory, src_mask, ys, ys_mask)
+    #     logger.warning(f"ys={ys.size()} ys_mask={ys_mask.size()} out={out.size()}")
+    #     prob = model.generator(out[:, -1])
+    #     _, next_word = torch.max(prob, dim=1)
+
+    #     # Get the top-k most probable next words from the current output.
+
+    #     # For all of the top-k most probably outputs, run decoding again
+
+    #     logger.info(f">>> next_word size: {next_word.size()}")
+    #     next_word = next_word.data[0]
+    #     ys = torch.cat(
+    #         [ys, torch.zeros(1, 1).type_as(src.data).fill_(next_word)], dim=1
+    #     )
+    #     logger.info(f"Next ys: {ys.size()}")
+
+    # return ys
 
 
 def example_simple_model():
@@ -1136,7 +1351,7 @@ def build_vocabulary(spacy_de, spacy_en):
     def tokenize_en(text):
         return tokenize(text, spacy_en)
 
-    print("Building German Vocabulary ...")
+    logger.info("Building German Vocabulary ...")
     train, val, test = datasets.Multi30k(language_pair=("de", "en"))
     vocab_src = build_vocab_from_iterator(
         yield_tokens(train + val + test, tokenize_de, index=0),
@@ -1144,7 +1359,7 @@ def build_vocabulary(spacy_de, spacy_en):
         specials=["<s>", "</s>", "<blank>", "<unk>"],
     )
 
-    print("Building English Vocabulary ...")
+    logger.info("Building English Vocabulary ...")
     train, val, test = datasets.Multi30k(language_pair=("de", "en"))
     vocab_tgt = build_vocab_from_iterator(
         yield_tokens(train + val + test, tokenize_en, index=1),
@@ -1175,7 +1390,7 @@ def build_en_vocabulary(
     def tokenize_en(text):
         return tokenize(text, spacy_en)
 
-    print("Building English Vocabulary ...")
+    logger.info("Building English Vocabulary ...")
     vocab = build_vocab_from_iterator(
         yield_tokens(itertools.chain(train_iter, val_iter), tokenize_en, index=1),
         min_freq=2,
@@ -1188,14 +1403,15 @@ def build_en_vocabulary(
 
 
 def load_vocab(spacy_de, spacy_en):
-    if not exists("vocab.pt"):
+    if not Path("vocab.pt").exists():
         vocab_src, vocab_tgt = build_vocabulary(spacy_de, spacy_en)
         torch.save((vocab_src, vocab_tgt), "vocab.pt")
     else:
         vocab_src, vocab_tgt = torch.load("vocab.pt")
-    print("Finished.\nVocabulary sizes:")
-    print(len(vocab_src))
-    print(len(vocab_tgt))
+    logger.info(
+        f"Finished.\nVocabulary sizes: src={len(vocab_src)} tgt={len(vocab_tgt)}"
+    )
+
     return vocab_src, vocab_tgt
 
 
@@ -1559,7 +1775,7 @@ def my_train_worker(
     num_layers = config["num_layers"]
     num_epochs = config["num_epochs"]
 
-    print(
+    logger.info(
         f"Training params: pad_idx={pad_idx} d_model={d_model} num_layers={num_layers} num_epochs={num_epochs} vocab-len={len(vocab)}"
     )
 
@@ -1595,7 +1811,7 @@ def my_train_worker(
 
     for epoch in range(num_epochs):
         model.train()
-        print(f"CPU Epoch {epoch} Training ====", flush=True)
+        logger.info(f"CPU Epoch {epoch} Training ====", flush=True)
         _, train_state = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in train_dataloader),
             model,
@@ -1612,7 +1828,7 @@ def my_train_worker(
             torch.save(module.state_dict(), file_path)
         torch.cuda.empty_cache()
 
-        print(f"Epoch {epoch} Validation ====", flush=True)
+        logger.info(f"Epoch {epoch} Validation ====", flush=True)
         model.eval()
         sloss = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in valid_dataloader),
@@ -1622,7 +1838,7 @@ def my_train_worker(
             DummyScheduler(),
             mode="eval",
         )
-        print(sloss)
+        logger.info(sloss)
 
     if is_main_process:
         file_path = "%s_final.pt" % config["file_prefix"]
@@ -1650,7 +1866,7 @@ def train_worker(
     config,
     is_distributed=False,
 ):
-    print(f"Train worker process using GPU: {gpu} for training", flush=True)
+    logger.info(f"Train worker process using GPU: {gpu} for training", flush=True)
     torch.cuda.set_device(gpu)
 
     pad_idx = vocab_tgt["<blank>"]
@@ -1696,7 +1912,7 @@ def train_worker(
             valid_dataloader.sampler.set_epoch(epoch)
 
         model.train()
-        print(f"[GPU{gpu}] Epoch {epoch} Training ====", flush=True)
+        logger.info(f"[GPU{gpu}] Epoch {epoch} Training ====", flush=True)
         _, train_state = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in train_dataloader),
             model,
@@ -1714,7 +1930,7 @@ def train_worker(
             torch.save(module.state_dict(), file_path)
         torch.cuda.empty_cache()
 
-        print(f"[GPU{gpu}] Epoch {epoch} Validation ====", flush=True)
+        logger.info(f"[GPU{gpu}] Epoch {epoch} Validation ====", flush=True)
         model.eval()
         sloss = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in valid_dataloader),
@@ -1724,7 +1940,7 @@ def train_worker(
             DummyScheduler(),
             mode="eval",
         )
-        print(sloss)
+        logger.info(sloss)
         torch.cuda.empty_cache()
 
     if is_main_process:
@@ -1738,8 +1954,8 @@ def train_distributed_model(vocab_src, vocab_tgt, spacy_de, spacy_en, config):
     ngpus = torch.cuda.device_count()
     os.environ["MASTER_ADDR"] = "localhost"
     os.environ["MASTER_PORT"] = "12356"
-    print(f"Number of GPUs detected: {ngpus}")
-    print("Spawning training processes ...")
+    logger.info(f"Number of GPUs detected: {ngpus}")
+    logger.info("Spawning training processes ...")
     mp.spawn(
         train_worker,
         nprocs=ngpus,
@@ -1766,7 +1982,7 @@ def load_trained_model():
         "file_prefix": "multi30k_model_",
     }
     model_path = "multi30k_model_final.pt"
-    if not exists(model_path):
+    if not Path(model_path).exists():
         train_model(vocab_src, vocab_tgt, spacy_de, spacy_en, config)
 
     model = make_model(len(vocab_src), len(vocab_tgt), N=6)
@@ -1778,7 +1994,7 @@ def load_trained_model():
 def my_load_trained_model(
     vocab_src: Vocab, vocab_tgt: Vocab, config: dict, model_path: str
 ):
-    if not exists(model_path):
+    if not Path(model_path).exists():
         raise Exception(f"Model path not found: {model_path}")
 
     model = make_model(
@@ -1814,45 +2030,52 @@ def check_outputs(
     global logger
     results = [()] * n_examples
     for idx in range(n_examples):
-        print("\nExample %d ========\n" % idx)
+        logger.info("\nExample %d ========\n" % idx)
         b = next(iter(valid_dataloader))
         rb = Batch(b[0], b[1], pad_idx)
         logger.info(
             f">> rb.src={rb.src} rb.src.size()={rb.src.size()} rb.src_mask.size()={rb.src_mask.size()}"
         )
-        # rb.src.mask={rb.src_mask}  rb.src_mask.size()={rb.src_mask.size()}")
-        # greedy_decode(model, rb.src, rb.src_mask, 64, 0)[0]
 
         src_tokens = [vocab_src.get_itos()[x] for x in rb.src[0] if x != pad_idx]
         tgt_tokens = [vocab_tgt.get_itos()[x] for x in rb.tgt[0] if x != pad_idx]
 
-        print("Source Text (Input)        : " + " ".join(src_tokens).replace("\n", ""))
-        print("Target Text (Ground Truth) : " + " ".join(tgt_tokens).replace("\n", ""))
-        ys = greedy_decode(
-            model,
-            rb.src,
-            rb.src_mask,
-            max_len,
-            vocab_src["<s>"],
+        logger.info(
+            "Source Text (Input)        : " + " ".join(src_tokens).replace("\n", "")
         )
+        logger.info(
+            "Target Text (Ground Truth) : " + " ".join(tgt_tokens).replace("\n", "")
+        )
+        # ys = greedy_decode(
+        #     model,
+        #     rb.src,
+        #     rb.src_mask,
+        #     max_len,
+        #     vocab_src["<s>"],
+        # )
+        beam_len = int(os.environ.get("BEAM_LENGTH", "1"))
+        ys = beam_decode(
+            model, rb.src, rb.src_mask, max_len, vocab_src["<s>"], beam_length=beam_len
+        )
+
         model_out = ys[0]
-        logger.warning(f"ys={ys.size()} model_out={model_out.size()}")
+        logger.info(f"ys={ys.size()} model_out={model_out.size()}")
         model_txt = (
             " ".join(
                 [vocab_tgt.get_itos()[x] for x in model_out if x != pad_idx]
             ).split(eos_string, 1)[0]
             + eos_string
         )
-        print("Model Output               : " + model_txt.replace("\n", ""))
+        logger.info("Model Output               : " + model_txt.replace("\n", ""))
         results[idx] = (rb, src_tokens, tgt_tokens, model_out, model_txt)
-        exit(1)
+
     return results
 
 
 def run_model_example(n_examples=5):
     global vocab_src, vocab_tgt, spacy_de, spacy_en
 
-    print("Preparing Data ...")
+    logger.info("Preparing Data ...")
     _, valid_dataloader = create_dataloaders(
         torch.device("cpu"),
         vocab_src,
@@ -1863,14 +2086,14 @@ def run_model_example(n_examples=5):
         is_distributed=False,
     )
 
-    print("Loading Trained Model ...")
+    logger.info("Loading Trained Model ...")
 
     model = make_model(len(vocab_src), len(vocab_tgt), N=6)
     model.load_state_dict(
         torch.load("multi30k_model_final.pt", map_location=torch.device("cpu"))
     )
 
-    print("Checking Model Outputs:")
+    logger.info("Checking Model Outputs:")
     example_data = check_outputs(
         valid_dataloader, model, vocab_src, vocab_tgt, n_examples=n_examples
     )
