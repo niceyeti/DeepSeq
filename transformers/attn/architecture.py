@@ -134,12 +134,11 @@ class EncoderLayer(nn.Module):
         "Follow Figure 1 (left) for connections."
         global logger
         logger.info(f"EncoderLayer forward:  x dim {x.size()}  mask dim {mask.size()}")
-        # exit(1)
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
         logger.info(f"encoder x dim: {x.size()}")
 
         x_final = self.sublayer[1](x, self.feed_forward)
-        logger.info(f"encoder x_final dim: {x_final.size()}")
+        logger.info(f"Encoder x_final dim: {x_final.size()}")
 
         return x_final
 
@@ -348,17 +347,6 @@ def attention(query, key, value, mask=None, dropout=None):
         mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 71, 72])
         mask.size=torch.Size([8, 1, 71, 71]) scores=torch.Size([8, 8, 71, 71])
         mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 71, 72])
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 72, 72])
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 72, 72])
-        mask.size=torch.Size([8, 1, 71, 71]) scores=torch.Size([8, 8, 71, 71])
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 71, 72])
-        mask.size=torch.Size([8, 1, 71, 71]) scores=torch.Size([8, 8, 71, 71])
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 71, 72])
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 72, 72])
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 72, 72])
-        mask.size=torch.Size([8, 1, 71, 71]) scores=torch.Size([8, 8, 71, 71])
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 71, 72])
-
     Output time output:
         mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 72, 72])
         mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 72, 72])
@@ -367,34 +355,21 @@ def attention(query, key, value, mask=None, dropout=None):
     """
 
     if mask is not None:
-        # mask.size=torch.Size([32, 1, 1, 72]) scores=torch.Size([1, 8, 1,
-        # 2304]) RuntimeError: The size of tensor a (72) must match the size of
-        # tensor b (2304) at non-singleton dimension 3 Note that 72 * 32 = 2304
-        # logger.info(f"mask.size={mask.size()} scores={scores.size()}")
-        #
         # Set masked scores to negative large-numbers, such that their output
         # probs are effectively zero.
-
         old_shape = mask.shape
         if mask.size()[-1] != scores.size()[-1]:
             mask = mask.view(1, 1, 1, -1)
-            logger.warning(
+            logger.info(
                 f"mask size {old_shape} != scores size {scores.size()}, reshaped to {mask.size()}. This is currently needed during inference because ys has no batch dim."
             )
 
-        logger.warning(
+        logger.info(
             f"q={query.size()} k={key.size()} k_t={k_t.size()} v={value.size()}"
             + f"  scores={scores.size()} mask={mask.size()} mask_old_shape={old_shape}"
         )
 
-        # Bug cope: force the mask to satisfy size reqs, without knowing what I'm doing a priori...
-        # if mask.shape[-1] == scores.shape[-1]:
-        #     mask = mask.view(1, 1, 1, -1)
-
-        # TODO: this is bug cope due to a bug with mismatched dimensions at some step in the model.
-        # if mask.shape[-1] == scores.shape[-1]:
         scores = scores.masked_fill(mask == False, -1e9)
-        # pass
     p_attn = scores.softmax(dim=-1)
     if dropout is not None:
         p_attn = dropout(p_attn)
@@ -456,12 +431,7 @@ class MultiHeadedAttention(nn.Module):
         return self.linears[-1](x)
 
     def forward(self, query, key, value, mask=None):
-        """Implements Figure 2
-
-        TODO: review transpose operations, not sure this issue is valid or not but reflects
-        similar confusion: https://github.com/harvardnlp/annotated-transformer/issues/118.
-        """
-        # return self.original_forward(query, key, value, mask)
+        """Implements Figure 2"""
 
         if mask is not None:
             # Same mask applied to all h heads. Unsqueeze inserts a new
@@ -476,12 +446,13 @@ class MultiHeadedAttention(nn.Module):
         # run through a linear model, as shown in many tutorials, resulting in
         # the final query, key, and value matrices.
 
+        # Note: original compact code setup of the linear layers. The zip looks like
+        # a bug as there are four linear layers but zip iterates only the smaller
+        # collection (len 3), thus omitting the fourth layer. However the last layer
+        # is used in the final output further below.
+        #
         # query, key, value = [
         #     lin(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
-        #     # TODO: this appears to be a bug in the original paper source: four
-        #     # linear layers are initialized, but only three are used via zip
-        #     # which only ranges over the three query, key, value items. Zip only
-        #     # iterates up to the smaller of two iterables.
         #     for lin, x in zip(self.linears, (query, key, value))
         # ]
         #
@@ -699,7 +670,7 @@ def make_model(
         if p.dim() > 1:
             nn.init.xavier_uniform_(p)
 
-    # Not really the place to do this, but crrently the most central place
+    # Not really the place to do this, but currently the most central place
     # to display model characteristics.
     torchinfo.summary(model)
 
@@ -733,9 +704,6 @@ def inference_test():
 def run_tests():
     for _ in range(10):
         inference_test()
-
-
-# show_example(run_tests)
 
 
 class Batch:
@@ -966,9 +934,6 @@ def example_label_smoothing():
     )
 
 
-# show_example(example_label_smoothing)
-
-
 def loss(x, crit):
     d = x + 3 * 1
     predict = torch.FloatTensor([[0, x / d, 1 / d, 1 / d, 1 / d]])
@@ -994,9 +959,6 @@ def penalization_visualization():
         )
         .interactive()
     )
-
-
-# show_example(penalization_visualization)
 
 
 def data_gen(V, batch_size, nbatches):
@@ -1038,7 +1000,7 @@ def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
     global logger
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
-    logger.warning(
+    logger.info(
         f"memory.size()={memory.size()}, src={src.size()} src_mask={src_mask.size()}"
     )
 
@@ -1060,7 +1022,7 @@ def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
         # size as ys, since we haven't predicted the next word until below.
         out = model.decode(memory, src_mask, ys, ys_mask)
         # WARNING:root:ys=torch.Size([1, 68]) ys_mask=torch.Size([1, 68, 68]) out=torch.Size([1, 68, 256])
-        logger.warning(f"ys={ys.size()} ys_mask={ys_mask.size()} out={out.size()}")
+        logger.info(f"ys={ys.size()} ys_mask={ys_mask.size()} out={out.size()}")
 
         prob = model.generator(out[:, -1])
         _, next_word = torch.max(prob, dim=1)
@@ -1147,7 +1109,6 @@ def beam_decode(
         for beam_item in beam:
             # At each time step, mask all subsequent terms to prevent the model looking ahead.
             ys_mask = subsequent_mask(beam_item.ys.size(1)).type_as(src.data)
-            # ys=torch.Size([1, 2]) ys_mask=torch.Size([1, 2, 2])
 
             # TODO: input to the decoder is given as (1 x seqlen), where b=1.
             # The batch size b could easily be used to support decoding batches
@@ -1172,14 +1133,184 @@ def beam_decode(
             # the same size as ys, since we haven't predicted the next word
             # until below.
             out = model.decode(memory, src_mask, beam_item.ys, ys_mask)
-            logger.warning(
+            logger.info(
                 f"ys={beam_item.ys.size()} ys_mask={ys_mask.size()} out={out.size()}"
             )
             prob = model.generator(out[:, -1])
             # Retrieve top beam-length max next-words. By the pigeonhole
             # principle, this ensures total coverage of possible next-best
             # values. You could implement heuristics here to weight k by current
-            # term's likelihood. The sorted=False is since the beam is sorted later.
+            # term's likelihood. The sorted=False is because the beam is sorted later.
+            #
+            # probs is dim and next_word_indices is ____.
+            (probs, next_word_indices) = torch.topk(
+                prob, k=beam_length, dim=1, sorted=False
+            )
+            logger.info(
+                f">>> probs={probs.size()} next_word_indices={next_word_indices.size()}"
+            )
+            # TODO: loosely, this is where we could combine beam length b and
+            # depth-first search depth d, as follows. For each item in the beam,
+            # decode twice forward: find the top-k most likely words for the
+            # current item, then for each of these, probe again to find the most
+            # likely word sequence of length d (2, 3, 4...). This is from
+            # structured prediction, by which b and d can be calibrated for
+            # efficiency but also heuristic optimality, to help discover
+            # higher-likelihood sequences that are hidden a few steps ahead.
+            # This is the same as any tree search or value-backup, accumulate a
+            # value and store back pointers. Also note this search could be
+            # weighted by probs, to provide slightly better performance.
+
+            # Extend the beam with the top-k next-terms and their probabilities.
+            #
+            # TODO: I'm foggy on log-softmax, which is the output of the
+            # generator. The probs are negative values, and the largest (nearest
+            # zero) is the highest prob. Likewise, log-prob addition represents
+            # multiplication back in non-log space, hence adding these
+            # cumulatively represents the total sequence prob, which is a
+            # product.
+
+            logger.info(f"LEN: {len(list(zip(probs, next_word_indices)))}")
+
+            for prob, next_word_index in zip(probs, next_word_indices):
+                logger.info(f">>> next_word_index size: {next_word_index.size()}")
+                next_word = next_word_index.data[0]
+                next_ys = torch.cat(
+                    [
+                        beam_item.ys,
+                        torch.zeros(1, 1).type_as(src.data).fill_(next_word),
+                    ],
+                    dim=1,
+                )
+                logger.info(f"Next ys: {next_ys.size()}")
+
+                # TODO: do not append, or rather do not reprocess/decode when
+                # next word is the EOS symbol, terminating the sequence. There
+                # are multiple questions here such as if terminated sequences
+                # should remain in the beam, or search should continue without
+                # them, while keeping them separately.
+                next_beam.append(BeamItem(ys=next_ys, prob=prob + beam_item.prob))
+
+        # TODO: per other TODOs, optimize beam/next_beam redundancy, and use a heap/pque.
+        beam = next_beam
+        beam = sorted(beam, key=lambda beam_item: beam_item.prob)
+        beam = beam[:beam_length]
+
+    # TODO: return whole beam and print all sequences.
+    return beam[0].ys
+
+
+def hybrid_beam_dfs_decode(
+    model: EncoderDecoder, src, src_mask, max_len, start_symbol, beam_length, max_depth
+) -> List[torch.Tensor]:
+    """
+    An improvement on beam-search during inference is to probe up to some depth
+    d using DFS from the current beam. Given a beam length of k and a depth
+    parameter d, (1) generate a beam of top-k next words (2) for each node in
+    beam, assign its probability as the max sequential probability using greedy
+    DFS from that node up to depth d (3) append this max (with its node) to the
+    beam.
+
+    This method is equivalent to beam search, except that each node's assigned
+    probability is instead a score derived from the max probability when
+    extending that node up to depth d. (Realistically, each node is only
+    extended heuristically to its top-k successors not it's exponential
+    linguistic successors: an incomplete search, but will be good enough.)
+
+    Note that this makes beam-extension a bit ambiguous: for a beam with k
+    nodes, do we simply run DFS from each node to get its next score, and
+    thereby not extend the current beam to > k nodes (multiple successors)?
+    Resolving this entails inspecting the goals and beam and depth search: the
+    beam ensure good coverage of successors, while depth-first search ensures
+    that we "look-ahead" a sufficient distance to approximately find the best
+    sequence without a full exponential search over all possible sequences.
+
+    I think this means there are three parameters: (1) overall beam length k (2) child
+    generation length (for each node in beam) k' (3) DFS depth d. Note how these
+    separately relate to the real properties of language: the intent of d is to
+    ensure that we look-ahead far enough to find high-probability nodes that
+    occur later. But the definition of 'probability' depends on the model and
+    its biases, as language follows Zip's law such that low-probability subject
+    terms (like some local location) may be assigned low probability but high
+    contextual probability. Hm...
+    """
+
+    # TODO: update me with type info when their structure is understood.
+    # Or, remove and replace with tuple if local enough.
+    @dataclass
+    class BeamItem:
+        # The word sequence.
+        ys: torch.Tensor
+        # The accumulated probability for this sequence.
+        prob: float
+
+    global logger
+    memory = model.encode(src, src_mask)
+    # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
+    logger.info(
+        f"memory.size()={memory.size()}, src={src.size()} src_mask={src_mask.size()}"
+    )
+
+    # TODO: batchify these ops: intuition says I'm doing this wastefully, but
+    # could run inference much faster for a batch of items in the beam at once.
+    # Beam search seems extremely amenable to very fast batchification, whereby
+    # long beams could be decoded all at once, instead of through iteration.
+
+    ys = torch.zeros(1, 1).fill_(start_symbol).type_as(src.data)
+    # The beam is a list of tensors and their associated probabilities.
+    # Initialized to the start_symbol, with prob chosen such that subsequent
+    # probs accumulate correctly.
+    beam: List[BeamItem] = [BeamItem(ys=ys, prob=-1.0)]
+
+    # TODO: revise stopping criteria, i.e. when the whole beam's items achieve
+    # some length or are all capped with EOS pads.
+    for _ in range(20):
+        # For each word in the beam, run the decoder to get its top-k most
+        # likely next outputs, appending this to the beam. After predicting for
+        # all candidate terms and appending their top-k outputs, sort and
+        # truncate the beam back to beam-length. K and beam-length are separate
+        # parameters, where beam supports total scope and k is effectively the
+        # search radius around candidate words.
+        #
+        #  TODO: replace beam with a heap to avoid large beam and sorting.
+        # TOD: replace deepcopy with a more efficient pattern when code paths harden. This is cope to prevent the infinite loop of appending
+        # to the beam while iterating it.
+        next_beam = []
+        for beam_item in beam:
+            # At each time step, mask all subsequent terms to prevent the model looking ahead.
+            ys_mask = subsequent_mask(beam_item.ys.size(1)).type_as(src.data)
+
+            # TODO: input to the decoder is given as (1 x seqlen), where b=1.
+            # The batch size b could easily be used to support decoding batches
+            # of the beam at a time, more efficiently than through iteration.
+
+            # Hybrid beam with greedy depth search:
+            # - for each item in the beam
+            # - run decoder greedily for d steps, i.e. repeat d times: `next_word = decode(next_word)`
+            # - return max_prob, and arg_max sequence for this item to add to beam
+            #
+            # Other alterations are possible, such as backing up the 'value' of each word per
+            # an average over its successors under some strategy, a la Monte Carlo sampling.
+
+            # ys=torch.Size([1, 2]) ys_mask=torch.Size([1, 2, 2])
+            # >>>> memory=torch.Size([32, 72, 256]) src_mask=torch.Size([32, 1, 72]) ys=torch.Size([1, 68]) ys_mask=torch.Size([1, 68, 68])
+            # print(
+            #     f">>>> memory={memory.size()} src_mask={src_mask.size()} ys={ys.size()} ys_mask={ys_mask.size()}"
+            # )
+
+            # @out is size (b x cur_len x d_model), where cur_len is the current
+            # len of the sequence as it is extended one at a time. Note it is
+            # the same size as ys, since we haven't predicted the next word
+            # until below.
+            out = model.decode(memory, src_mask, beam_item.ys, ys_mask)
+            logger.info(
+                f"ys={beam_item.ys.size()} ys_mask={ys_mask.size()} out={out.size()}"
+            )
+            prob = model.generator(out[:, -1])
+            # Retrieve top beam-length max next-words. By the pigeonhole
+            # principle, this ensures total coverage of possible next-best
+            # values. You could implement heuristics here to weight k by current
+            # term's likelihood. The sorted=False is because the beam is sorted later.
             #
             # probs is dim and next_word_indices is ____.
             (probs, next_word_indices) = torch.topk(
@@ -1730,7 +1861,6 @@ def create_seq_dataloaders(
     for example: ('Zwei Chinesen stehen an einer Wandtafel.', 'Two chinese
     people are standing by a chalkboard.')
     """
-    # TODO: make these iters, not funcs.
     train_iter, valid_iter = get_novel_sentence_iters(novel_path)
 
     train_iter_map = to_map_style_dataset(train_iter)
@@ -2203,9 +2333,6 @@ def viz_encoder_self():
     )
 
 
-# show_example(viz_encoder_self)
-
-
 def viz_decoder_self():
     model, example_data = run_model_example(n_examples=1)
     example = example_data[len(example_data) - 1]
@@ -2229,9 +2356,6 @@ def viz_decoder_self():
         & layer_viz[4]
         & layer_viz[5]
     )
-
-
-# show_example(viz_decoder_self)
 
 
 def viz_decoder_src():
@@ -2278,7 +2402,3 @@ def train_huckfinn():
             for line in ifile.writelines()
             if len(line.strip()) > 0 and not line.startswith("CHAPTER")
         ]
-
-    # Train
-
-    # Generate

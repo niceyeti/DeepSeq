@@ -50,7 +50,6 @@ trained_model = architecture.my_load_trained_model(
     model_path,
 )
 
-# TODO: write a beam-search method to search for probable sequences.
 architecture.check_outputs(
     valid_dataloader,
     trained_model,
