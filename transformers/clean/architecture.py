@@ -30,7 +30,7 @@ import altair as alt
 import spacy
 from spacy import Language
 
-from transformers.clean.model_config import TransformerConfig
+from model_config import TransformerConfig
 
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
@@ -129,7 +129,7 @@ class EncoderLayer(nn.Module):
 
     def forward(self, x, mask):
         "Follow Figure 1 (left) for connections."
-        global log
+        # global log
         log.info(f"EncoderLayer forward:  x dim {x.size()}  mask dim {mask.size()}")
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
         log.info(f"encoder x dim: {x.size()}")
@@ -222,7 +222,7 @@ class EncoderDecoder(nn.Module):
             3) other masking to perform custom training to attend to specific
                tokens for domain oriented tasks
         """
-        global log
+        # global log
         log.info(f"encdec src: {src.size()}  {src.type()}")
         log.info(f"encdec tgt: {tgt.size()}  {tgt.type()}")
         log.info(f"encdec src_mask: {src_mask.size()}  {src_mask.type()}")
@@ -236,7 +236,7 @@ class EncoderDecoder(nn.Module):
         @src:
         @src_mask:
         """
-        global log
+        # global log
         log.info(
             f"encdec encoder layer: src.size()={src.size()} src_mask.size()={src_mask.size()}"
         )
@@ -251,7 +251,7 @@ class EncoderDecoder(nn.Module):
         @tgt_mask: size is coupled to tgt size, and is a triangular matrix whose elements above the diagonal are true.
           The size per @tgt is (1 x c x c)
         """
-        global log
+        # global log
         log.info(
             f"encdec decoder layer: memory.size()={memory.size()} src_mask.size()={src_mask.size()} tgt.size()={tgt.size()} tgt_mask.size()={tgt_mask.size()}"
         )
@@ -328,7 +328,7 @@ def attention(query, key, value, mask=None, dropout=None):
         * mask:
         * dropout: if any
     """
-    global log
+    # global log
     # Get the dimensionality d_head
     d_k = query.size(-1)
     k_t = key.transpose(-2, -1)
@@ -456,7 +456,7 @@ class MultiHeadedAttention(nn.Module):
         # The above is a compact way to write these linear ops on the heads, but
         # enumeration per below allows tracking the algebraic dimensions.
 
-        global log
+        # global log
 
         # W_q * q   whose dimensions are   (d_model x d_model) * (b x max_padding x d_model)
         # More precisely, W_q in calculations is (d_output x d_input) and its input will
@@ -694,7 +694,7 @@ def inference_test():
             [ys, torch.empty(1, 1).type_as(src.data).fill_(next_word)], dim=1
         )
 
-    global log
+    # global log
     log.info("Example Untrained Model Prediction:", ys)
 
 
@@ -994,7 +994,7 @@ def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
     output is the original sentence.
     """
 
-    global log
+    # global log
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
     log.info(
@@ -1071,7 +1071,7 @@ def beam_decode(
         # The accumulated probability for this sequence.
         prob: float
 
-    global log
+    # global log
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
     log.info(
@@ -1244,7 +1244,7 @@ def hybrid_beam_dfs_decode(
         # The accumulated probability for this sequence.
         prob: float
 
-    global log
+    # global log
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
     log.info(
@@ -1603,7 +1603,7 @@ def collate_batch(
             0,
         )
 
-        global log
+        # global log
         if max_padding - len(processed_src) < 0:
             log.warning("Overwrite occurs for negative value of a padding - len")
         log.info
@@ -1989,21 +1989,21 @@ def my_generation(model: EncoderDecoder, vocab: Vocab):
 
 
 def my_load_trained_model(
-    vocab_src: Vocab, vocab_tgt: Vocab, config: dict, model_path: str
+    vocab_src: Vocab, vocab_tgt: Vocab, config: TransformerConfig
 ):
-    if not Path(model_path).exists():
-        raise Exception(f"Model path not found: {model_path}")
+    if not Path(config.model_path).exists():
+        raise Exception(f"Model path not found: {config.model_path}")
 
     model = make_model(
         len(vocab_src),
         len(vocab_tgt),
-        N=config["num_layers"],
-        d_model=config["d_model"],
-        d_ff=config["d_ff"],
-        h=config["h"],
-        dropout=config["dropout"],
+        N=config.num_layers,
+        d_model=config.d_model,
+        d_ff=config.d_ff,
+        h=config.h,
+        dropout=config.dropout,
     )
-    model.load_state_dict(torch.load(model_path))
+    model.load_state_dict(torch.load(config.model_path))
 
     return model
 
@@ -2043,6 +2043,7 @@ def check_outputs(
         log.info(
             "Target Text (Ground Truth) : " + " ".join(tgt_tokens).replace("\n", "")
         )
+        print("foo")
         # ys = greedy_decode(
         #     model,
         #     rb.src,

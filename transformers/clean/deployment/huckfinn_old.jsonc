@@ -11,7 +11,7 @@
     // each have this number of layers.
     "num_layers": 6,
     // The model dimension, 512 in the original paper.
-    "d_model": 512,
+    "d_model": 256,
     "dropout": 0.1,
     // The dimenson of the feed-forward network appended to each attention
     // encoder/decoder layer.
@@ -26,7 +26,9 @@
     "warmup": 3000,
     // The prefix by which models will be persisted and read back in. Model
     // progress is saved at each epoch in a pt file with this prefix.
-    "file_prefix": "../attn/chuckleberryfinn_model",
+    "file_prefix": "../attn/huckfinn",
+    // model_path is the path to a final .pt torch-model file.
+    "model_path": "../attn/huckfinn_final.pt",
     // The training data path.
     "data_path": "../attn/data/huckfinn_utf8.txt",
     // The device: either "gpu" or "cpu" only. See torch docs.

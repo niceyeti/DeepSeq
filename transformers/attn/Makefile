@@ -19,6 +19,7 @@ rebuild-venv:
 diagnose:
 	FILE_PREFIX=huckfinn MODEL_PATH=huckfinn_final.pt python check_outputs.py 
 
+
 .PHONY: test-outputs
 test-outputs:
 	source venv/bin/activate && \

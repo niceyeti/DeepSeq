@@ -60,7 +60,7 @@ def main():
     log.info(
         f"""########################################################################
 Beginning training with {args.config} config:
-{config.model_dump_json(indent="  ")}
+{config.model_dump_json(indent=4)}
 ########################################################################
 """
     )

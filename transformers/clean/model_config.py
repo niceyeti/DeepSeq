@@ -51,3 +51,6 @@ class TransformerConfig(BaseModel):
     # The path to a saved model. This is only used in inference/prod to load
     # a saved model.
     model_path: str = "./model_final.pt"
+    # Device must be either "cpu" or "gpu", and is passed directly to torch.
+    # See torch docs.
+    device: str = "cpu"

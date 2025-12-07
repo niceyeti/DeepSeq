@@ -48,7 +48,7 @@ def main():
     log.info(
         f"""########################################################################
 Beginning training with {args.config} config:
-{config.model_dump_json(indent="  ")}
+{config.model_dump_json(indent=4)}
 ########################################################################
 """
     )
@@ -60,7 +60,7 @@ Beginning training with {args.config} config:
     # omitted if too long.
     # train_iter, val_iter = architecture.get_novel_sentence_iters(config.data_path)
 
-    vocab = architecture.load(f"{config.file_prefix}.pth")
+    vocab = architecture.load_vocab(Path(f"{config.file_prefix}.pth"))
 
     train_dataloader, valid_dataloader = architecture.create_seq_dataloaders(
         config.data_path,
@@ -76,8 +76,8 @@ Beginning training with {args.config} config:
         vocab,
         vocab,
         config,
-        config.model_path,
     )
+    log.info(f"Model loaded from {config.model_path}")
 
     architecture.check_outputs(
         valid_dataloader,
@@ -88,3 +88,7 @@ Beginning training with {args.config} config:
         pad_idx=vocab["<blank>"],
         eos_string="</s>",
     )
+
+
+if __name__ == "__main__":
+    main()

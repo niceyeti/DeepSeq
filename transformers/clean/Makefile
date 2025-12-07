@@ -13,8 +13,8 @@ LOG_LEVEL?=WARNING
 # which is required by torchtext=0.18, since torchtext is no longer supported
 # and only supports torch 2.3
 #
-# TODO: add requirements.txt to a pyproject.toml and use its build chain instead,
-# even uv if possible.
+# TODO: add requirements.txt to a pyproject.toml and use its build chain
+# instead, even uv if possible.
 #
 # TODO: reduce dependencies and build time. This takes around 25mins on a good
 # connection. Optimize with pip-caching in the devcontainer.
@@ -55,7 +55,14 @@ train:
 check-outputs:
 	source .venv/bin/activate && \
 	BEAM_LENGTH=50 \
-		python check_outputs.py -c $(CONFIG_PATH)
+	LOG_LEVEL=WARNING \
+		python check_outputs_driver.py -c $(CONFIG_PATH)
+
+
+.PHONY: fmt
+fmt:
+	source .venv/bin/activate && \
+		black .
 
 
 .PHONY: clean
