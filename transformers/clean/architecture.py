@@ -5,7 +5,6 @@ import logging
 import math
 import copy
 import time
-import warnings
 from dataclasses import dataclass
 from typing import Generator as TGenerator, Tuple, List
 from pathlib import Path
@@ -20,24 +19,22 @@ from torchtext.vocab import Vocab
 from torchtext.vocab import build_vocab_from_iterator
 import torchtext.datasets as datasets
 from torch.utils.data.distributed import DistributedSampler
-import torch.distributed as dist
-import torch.multiprocessing as mp
-from torch.nn.parallel import DistributedDataParallel as DDP
+
+# import torch.distributed as dist
+# import torch.multiprocessing as mp
+# from torch.nn.parallel import DistributedDataParallel as DDP
 import torchinfo
 
 import pandas as pd
 import altair as alt
 import spacy
 from spacy import Language
-import GPUtil
+
+from transformers.clean.model_config import TransformerConfig
 
 
-# Set to False to skip notebook execution (e.g. for debugging)
-warnings.filterwarnings("ignore")
-
-
-logging.basicConfig(level=os.environ.get("LOGLEVEL", "WARNING").upper())
-logger = logging.getLogger()
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
+log = logging.getLogger()
 
 
 class DummyOptimizer(torch.optim.Optimizer):
@@ -132,13 +129,13 @@ class EncoderLayer(nn.Module):
 
     def forward(self, x, mask):
         "Follow Figure 1 (left) for connections."
-        global logger
-        logger.info(f"EncoderLayer forward:  x dim {x.size()}  mask dim {mask.size()}")
+        global log
+        log.info(f"EncoderLayer forward:  x dim {x.size()}  mask dim {mask.size()}")
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
-        logger.info(f"encoder x dim: {x.size()}")
+        log.info(f"encoder x dim: {x.size()}")
 
         x_final = self.sublayer[1](x, self.feed_forward)
-        logger.info(f"Encoder x_final dim: {x_final.size()}")
+        log.info(f"Encoder x_final dim: {x_final.size()}")
 
         return x_final
 
@@ -225,11 +222,11 @@ class EncoderDecoder(nn.Module):
             3) other masking to perform custom training to attend to specific
                tokens for domain oriented tasks
         """
-        global logger
-        logger.info(f"encdec src: {src.size()}  {src.type()}")
-        logger.info(f"encdec tgt: {tgt.size()}  {tgt.type()}")
-        logger.info(f"encdec src_mask: {src_mask.size()}  {src_mask.type()}")
-        logger.info(f"encdec tgt_mask: {tgt_mask.size()}  {tgt_mask.type()}")
+        global log
+        log.info(f"encdec src: {src.size()}  {src.type()}")
+        log.info(f"encdec tgt: {tgt.size()}  {tgt.type()}")
+        log.info(f"encdec src_mask: {src_mask.size()}  {src_mask.type()}")
+        log.info(f"encdec tgt_mask: {tgt_mask.size()}  {tgt_mask.type()}")
 
         return self.decode(self.encode(src, src_mask), src_mask, tgt, tgt_mask)
 
@@ -239,8 +236,8 @@ class EncoderDecoder(nn.Module):
         @src:
         @src_mask:
         """
-        global logger
-        logger.info(
+        global log
+        log.info(
             f"encdec encoder layer: src.size()={src.size()} src_mask.size()={src_mask.size()}"
         )
         return self.encoder(self.src_embed(src), src_mask)
@@ -254,8 +251,8 @@ class EncoderDecoder(nn.Module):
         @tgt_mask: size is coupled to tgt size, and is a triangular matrix whose elements above the diagonal are true.
           The size per @tgt is (1 x c x c)
         """
-        global logger
-        logger.info(
+        global log
+        log.info(
             f"encdec decoder layer: memory.size()={memory.size()} src_mask.size()={src_mask.size()} tgt.size()={tgt.size()} tgt_mask.size()={tgt_mask.size()}"
         )
 
@@ -331,12 +328,12 @@ def attention(query, key, value, mask=None, dropout=None):
         * mask:
         * dropout: if any
     """
-    global logger
+    global log
     # Get the dimensionality d_head
     d_k = query.size(-1)
     k_t = key.transpose(-2, -1)
 
-    logger.info(
+    log.info(
         f"In attn: d_k={d_k} q={query.size()} k={key.size()} k_t=k.transpose(-2,-1)={k_t.size()}"
     )
 
@@ -360,11 +357,11 @@ def attention(query, key, value, mask=None, dropout=None):
         old_shape = mask.shape
         if mask.size()[-1] != scores.size()[-1]:
             mask = mask.view(1, 1, 1, -1)
-            logger.info(
+            log.info(
                 f"mask size {old_shape} != scores size {scores.size()}, reshaped to {mask.size()}. This is currently needed during inference because ys has no batch dim."
             )
 
-        logger.info(
+        log.info(
             f"q={query.size()} k={key.size()} k_t={k_t.size()} v={value.size()}"
             + f"  scores={scores.size()} mask={mask.size()} mask_old_shape={old_shape}"
         )
@@ -459,13 +456,13 @@ class MultiHeadedAttention(nn.Module):
         # The above is a compact way to write these linear ops on the heads, but
         # enumeration per below allows tracking the algebraic dimensions.
 
-        global logger
+        global log
 
         # W_q * q   whose dimensions are   (d_model x d_model) * (b x max_padding x d_model)
         # More precisely, W_q in calculations is (d_output x d_input) and its input will
         # be transformed to (d_input x b * max_padding).
         W_q = self.linears[0]
-        logger.info(
+        log.info(
             f"W_q={W_q.weight.size()} query={query.size()} nbatches={nbatches} d_k={self.d_k}"
         )
         # W_q * q   whose dimensions are   (d_model x d_model) * (b x max_padding x d_model)
@@ -501,29 +498,29 @@ class MultiHeadedAttention(nn.Module):
         # changes to 8 x 64, effectively meaning that each d_model vector is just
         # broken into 8 different sections with independent weights.
         q_out = Wq.view(nbatches, -1, self.h, self.d_k)
-        logger.info(f"Wq={Wq.size()}  q_out={q_out.size()}")
+        log.info(f"Wq={Wq.size()}  q_out={q_out.size()}")
         query = q_out.transpose(1, 2)
-        logger.info(f"query={query.size()}")
+        log.info(f"query={query.size()}")
 
         # W_k * k   whose dimensions are   (d_model x d_model) * (d_model x)
         W_k = self.linears[1]
-        logger.info(f"W_k={W_k.weight.size()} key={key.size()} nbatches={nbatches}")
+        log.info(f"W_k={W_k.weight.size()} key={key.size()} nbatches={nbatches}")
         Wk = W_k(key)
         k_out = Wk.view(nbatches, -1, self.h, self.d_k)
-        logger.info(
+        log.info(
             f"Wk={Wk.size()}  k_out={k_out.size()} (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))"
         )
         key = k_out.transpose(1, 2)
-        logger.info(f"key={key.size()} (via k_out.transpose(1, 2))")
+        log.info(f"key={key.size()} (via k_out.transpose(1, 2))")
 
         # W_v * v   whose dimensions are   (d_model x d_model) * (d_model x)
         W_v = self.linears[2]
-        logger.info(f"W_v={W_v.weight.size()} value={value.size()} nbatches={nbatches}")
+        log.info(f"W_v={W_v.weight.size()} value={value.size()} nbatches={nbatches}")
         Wv = W_v(value)
         v_out = Wv.view(nbatches, -1, self.h, self.d_k)
-        logger.info(f"Wv={Wv.size()}  v_out={v_out.size()}")
+        log.info(f"Wv={Wv.size()}  v_out={v_out.size()}")
         value = v_out.transpose(1, 2)
-        logger.info(f"value={value.size()}")
+        log.info(f"value={value.size()}")
 
         # 2) Apply attention on all the projected vectors in batch. The second
         # return value self.attn (stored here for visualization) contains the
@@ -532,7 +529,7 @@ class MultiHeadedAttention(nn.Module):
         # keys, before multiplication/transformation by V back into the model
         # dim-space.
         x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
-        logger.info(f"x={x.size()} self.attn={self.attn.size()}")
+        log.info(f"x={x.size()} self.attn={self.attn.size()}")
 
         # 3) "Concat" using a view and apply a final linear.
         #
@@ -546,7 +543,7 @@ class MultiHeadedAttention(nn.Module):
         del value
         final_out = self.linears[-1](x)
         # final_out = (32 x 72 x 512)
-        logger.info(f"x reshaped={x.size()} final_out={final_out.size()}")
+        log.info(f"x reshaped={x.size()} final_out={final_out.size()}")
 
         return final_out
 
@@ -697,8 +694,8 @@ def inference_test():
             [ys, torch.empty(1, 1).type_as(src.data).fill_(next_word)], dim=1
         )
 
-    global logger
-    logger.info("Example Untrained Model Prediction:", ys)
+    global log
+    log.info("Example Untrained Model Prediction:", ys)
 
 
 def run_tests():
@@ -776,7 +773,7 @@ def run_epoch(
         if i % 40 == 1 and (mode == "train" or mode == "train+log"):
             lr = optimizer.param_groups[0]["lr"]
             elapsed = time.time() - start
-            logger.info(
+            log.info(
                 (
                     "Epoch Step: %6d | Accumulation Step: %3d | Loss: %6.2f "
                     + "| Tokens / Sec: %7.1f | Learning Rate: %6.1e"
@@ -997,10 +994,10 @@ def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
     output is the original sentence.
     """
 
-    global logger
+    global log
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
-    logger.info(
+    log.info(
         f"memory.size()={memory.size()}, src={src.size()} src_mask={src_mask.size()}"
     )
 
@@ -1022,16 +1019,16 @@ def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
         # size as ys, since we haven't predicted the next word until below.
         out = model.decode(memory, src_mask, ys, ys_mask)
         # WARNING:root:ys=torch.Size([1, 68]) ys_mask=torch.Size([1, 68, 68]) out=torch.Size([1, 68, 256])
-        logger.info(f"ys={ys.size()} ys_mask={ys_mask.size()} out={out.size()}")
+        log.info(f"ys={ys.size()} ys_mask={ys_mask.size()} out={out.size()}")
 
         prob = model.generator(out[:, -1])
         _, next_word = torch.max(prob, dim=1)
-        logger.info(f">>> next_word size: {next_word.size()}")
+        log.info(f">>> next_word size: {next_word.size()}")
         next_word = next_word.data[0]
         ys = torch.cat(
             [ys, torch.zeros(1, 1).type_as(src.data).fill_(next_word)], dim=1
         )
-        logger.info(f"Next ys: {ys.size()}")
+        log.info(f"Next ys: {ys.size()}")
     return ys
 
 
@@ -1074,10 +1071,10 @@ def beam_decode(
         # The accumulated probability for this sequence.
         prob: float
 
-    global logger
+    global log
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
-    logger.info(
+    log.info(
         f"memory.size()={memory.size()}, src={src.size()} src_mask={src_mask.size()}"
     )
 
@@ -1133,7 +1130,7 @@ def beam_decode(
             # the same size as ys, since we haven't predicted the next word
             # until below.
             out = model.decode(memory, src_mask, beam_item.ys, ys_mask)
-            logger.info(
+            log.info(
                 f"ys={beam_item.ys.size()} ys_mask={ys_mask.size()} out={out.size()}"
             )
             prob = model.generator(out[:, -1])
@@ -1146,7 +1143,7 @@ def beam_decode(
             (probs, next_word_indices) = torch.topk(
                 prob, k=beam_length, dim=1, sorted=False
             )
-            logger.info(
+            log.info(
                 f">>> probs={probs.size()} next_word_indices={next_word_indices.size()}"
             )
             # TODO: loosely, this is where we could combine beam length b and
@@ -1170,10 +1167,10 @@ def beam_decode(
             # cumulatively represents the total sequence prob, which is a
             # product.
 
-            logger.info(f"LEN: {len(list(zip(probs, next_word_indices)))}")
+            log.info(f"LEN: {len(list(zip(probs, next_word_indices)))}")
 
             for prob, next_word_index in zip(probs, next_word_indices):
-                logger.info(f">>> next_word_index size: {next_word_index.size()}")
+                log.info(f">>> next_word_index size: {next_word_index.size()}")
                 next_word = next_word_index.data[0]
                 next_ys = torch.cat(
                     [
@@ -1182,7 +1179,7 @@ def beam_decode(
                     ],
                     dim=1,
                 )
-                logger.info(f"Next ys: {next_ys.size()}")
+                log.info(f"Next ys: {next_ys.size()}")
 
                 # TODO: do not append, or rather do not reprocess/decode when
                 # next word is the EOS symbol, terminating the sequence. There
@@ -1247,10 +1244,10 @@ def hybrid_beam_dfs_decode(
         # The accumulated probability for this sequence.
         prob: float
 
-    global logger
+    global log
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
-    logger.info(
+    log.info(
         f"memory.size()={memory.size()}, src={src.size()} src_mask={src_mask.size()}"
     )
 
@@ -1306,7 +1303,7 @@ def hybrid_beam_dfs_decode(
             # the same size as ys, since we haven't predicted the next word
             # until below.
             out = model.decode(memory, src_mask, beam_item.ys, ys_mask)
-            logger.info(
+            log.info(
                 f"ys={beam_item.ys.size()} ys_mask={ys_mask.size()} out={out.size()}"
             )
             prob = model.generator(out[:, -1])
@@ -1319,7 +1316,7 @@ def hybrid_beam_dfs_decode(
             (probs, next_word_indices) = torch.topk(
                 prob, k=beam_length, dim=1, sorted=False
             )
-            logger.info(
+            log.info(
                 f">>> probs={probs.size()} next_word_indices={next_word_indices.size()}"
             )
             # TODO: loosely, this is where we could combine beam length b and
@@ -1343,10 +1340,10 @@ def hybrid_beam_dfs_decode(
             # cumulatively represents the total sequence prob, which is a
             # product.
 
-            logger.info(f"LEN: {len(list(zip(probs, next_word_indices)))}")
+            log.info(f"LEN: {len(list(zip(probs, next_word_indices)))}")
 
             for prob, next_word_index in zip(probs, next_word_indices):
-                logger.info(f">>> next_word_index size: {next_word_index.size()}")
+                log.info(f">>> next_word_index size: {next_word_index.size()}")
                 next_word = next_word_index.data[0]
                 next_ys = torch.cat(
                     [
@@ -1355,7 +1352,7 @@ def hybrid_beam_dfs_decode(
                     ],
                     dim=1,
                 )
-                logger.info(f"Next ys: {next_ys.size()}")
+                log.info(f"Next ys: {next_ys.size()}")
 
                 # TODO: do not append, or rather do not reprocess/decode when
                 # next word is the EOS symbol, terminating the sequence. There
@@ -1485,7 +1482,7 @@ def build_vocabulary(spacy_de, spacy_en):
     def tokenize_en(text):
         return tokenize(text, spacy_en)
 
-    logger.info("Building German Vocabulary ...")
+    log.info("Building German Vocabulary ...")
     train, val, test = datasets.Multi30k(language_pair=("de", "en"))
     vocab_src = build_vocab_from_iterator(
         yield_tokens(train + val + test, tokenize_de, index=0),
@@ -1493,7 +1490,7 @@ def build_vocabulary(spacy_de, spacy_en):
         specials=["<s>", "</s>", "<blank>", "<unk>"],
     )
 
-    logger.info("Building English Vocabulary ...")
+    log.info("Building English Vocabulary ...")
     train, val, test = datasets.Multi30k(language_pair=("de", "en"))
     vocab_tgt = build_vocab_from_iterator(
         yield_tokens(train + val + test, tokenize_en, index=1),
@@ -1524,7 +1521,7 @@ def build_en_vocabulary(
     def tokenize_en(text):
         return tokenize(text, spacy_en)
 
-    logger.info("Building English Vocabulary ...")
+    log.info("Building English Vocabulary ...")
     vocab = build_vocab_from_iterator(
         yield_tokens(itertools.chain(train_iter, val_iter), tokenize_en, index=1),
         min_freq=2,
@@ -1542,11 +1539,22 @@ def load_vocab(spacy_de, spacy_en):
         torch.save((vocab_src, vocab_tgt), "vocab.pt")
     else:
         vocab_src, vocab_tgt = torch.load("vocab.pt")
-    logger.info(
-        f"Finished.\nVocabulary sizes: src={len(vocab_src)} tgt={len(vocab_tgt)}"
-    )
+    log.info(f"Finished.\nVocabulary sizes: src={len(vocab_src)} tgt={len(vocab_tgt)}")
 
     return vocab_src, vocab_tgt
+
+
+def load_vocab(vocab_path: Path) -> Vocab:
+    """load_vocab loads a vocabulary from a pth file."""
+    return torch.load(vocab_path)
+
+
+def save_vocab(vocab: Vocab, vocab_path: Path):
+    """Persist all model info. The vocab is a firstclass piece of the model
+    since it provides the mapping from vocab to integers for the embedding
+    layers.
+    """
+    torch.save(vocab, vocab_path)
 
 
 def collate_batch(
@@ -1595,10 +1603,10 @@ def collate_batch(
             0,
         )
 
-        global logger
+        global log
         if max_padding - len(processed_src) < 0:
-            logger.warning("Overwrite occurs for negative value of a padding - len")
-        logger.info
+            log.warning("Overwrite occurs for negative value of a padding - len")
+        log.info
         src_list.append(
             # warning - overwrites values for negative values of padding - len
             pad(
@@ -1611,7 +1619,7 @@ def collate_batch(
             )
         )
         if max_padding - len(processed_tgt) < 0:
-            logger.warning("Overwrite occurs for negative value of a padding - len")
+            log.warning("Overwrite occurs for negative value of a padding - len")
         tgt_list.append(
             pad(
                 processed_tgt,
@@ -1893,14 +1901,14 @@ def create_seq_dataloaders(
 def my_train_worker(
     vocab: Vocab,
     spacy_en: Language,
-    config: dict,
+    config: TransformerConfig,
 ) -> EncoderDecoder:
     pad_idx = vocab["<blank>"]
-    d_model = config["d_model"]
-    num_layers = config["num_layers"]
-    num_epochs = config["num_epochs"]
+    d_model = config.d_model
+    num_layers = config.num_layers
+    num_epochs = config.num_epochs
 
-    logger.info(
+    log.info(
         f"Training params: pad_idx={pad_idx} d_model={d_model} num_layers={num_layers} num_epochs={num_epochs} vocab-len={len(vocab)}"
     )
 
@@ -1917,8 +1925,8 @@ def my_train_worker(
         torch.device("cpu"),
         vocab,
         spacy_en,
-        batch_size=config["batch_size"],
-        max_padding=config["max_padding"],
+        batch_size=config.batch_size,
+        max_padding=config.max_padding,
         is_distributed=False,
     )
 
@@ -1929,14 +1937,14 @@ def my_train_worker(
     # given function. When last_epoch=-1, sets initial lr as lr.
     lr_scheduler = LambdaLR(
         optimizer=optimizer,
-        lr_lambda=lambda step: rate(step, d_model, factor=1, warmup=config["warmup"]),
+        lr_lambda=lambda step: rate(step, d_model, factor=1, warmup=config.warmup),
         verbose=True,
     )
     train_state = TrainState()
 
     for epoch in range(num_epochs):
         model.train()
-        logger.info(f"CPU Epoch {epoch} Training ====", flush=True)
+        log.info(f"CPU Epoch {epoch} Training ====", flush=True)
         _, train_state = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in train_dataloader),
             model,
@@ -1949,11 +1957,11 @@ def my_train_worker(
         )
 
         if is_main_process:
-            file_path = "%s_%.2d.pt" % (config["file_prefix"], epoch)
+            file_path = "%s_%.2d.pt" % (config.file_prefix, epoch)
             torch.save(module.state_dict(), file_path)
         torch.cuda.empty_cache()
 
-        logger.info(f"Epoch {epoch} Validation ====", flush=True)
+        log.info(f"Epoch {epoch} Validation ====", flush=True)
         model.eval()
         sloss = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in valid_dataloader),
@@ -1963,10 +1971,10 @@ def my_train_worker(
             DummyScheduler(),
             mode="eval",
         )
-        logger.info(sloss)
+        log.info(sloss)
 
     if is_main_process:
-        file_path = "%s_final.pt" % config["file_prefix"]
+        file_path = "%s_final.pt" % config.file_prefix
         torch.save(module.state_dict(), file_path)
 
     return model
@@ -1978,142 +1986,6 @@ def my_generation(model: EncoderDecoder, vocab: Vocab):
     max_len = src.shape[1]
     src_mask = torch.ones(1, 1, max_len)
     print(greedy_decode(model, src, src_mask, max_len=max_len, start_symbol=0))
-
-
-# The original train_worker, using gpus and built to train on translation.
-def train_worker(
-    gpu,
-    ngpus_per_node,
-    vocab_src,
-    vocab_tgt,
-    spacy_de,
-    spacy_en,
-    config,
-    is_distributed=False,
-):
-    logger.info(f"Train worker process using GPU: {gpu} for training", flush=True)
-    torch.cuda.set_device(gpu)
-
-    pad_idx = vocab_tgt["<blank>"]
-    d_model = 512
-    model = make_model(len(vocab_src), len(vocab_tgt), N=6)
-    model.cuda(gpu)
-    module = model
-    is_main_process = True
-    if is_distributed:
-        dist.init_process_group(
-            "nccl", init_method="env://", rank=gpu, world_size=ngpus_per_node
-        )
-        model = DDP(model, device_ids=[gpu])
-        module = model.module
-        is_main_process = gpu == 0
-
-    criterion = LabelSmoothing(size=len(vocab_tgt), padding_idx=pad_idx, smoothing=0.1)
-    criterion.cuda(gpu)
-
-    train_dataloader, valid_dataloader = create_dataloaders(
-        gpu,
-        vocab_src,
-        vocab_tgt,
-        spacy_de,
-        spacy_en,
-        batch_size=config["batch_size"] // ngpus_per_node,
-        max_padding=config["max_padding"],
-        is_distributed=is_distributed,
-    )
-
-    optimizer = torch.optim.Adam(
-        model.parameters(), lr=config["base_lr"], betas=(0.9, 0.98), eps=1e-9
-    )
-    lr_scheduler = LambdaLR(
-        optimizer=optimizer,
-        lr_lambda=lambda step: rate(step, d_model, factor=1, warmup=config["warmup"]),
-    )
-    train_state = TrainState()
-
-    for epoch in range(config["num_epochs"]):
-        if is_distributed:
-            train_dataloader.sampler.set_epoch(epoch)
-            valid_dataloader.sampler.set_epoch(epoch)
-
-        model.train()
-        logger.info(f"[GPU{gpu}] Epoch {epoch} Training ====", flush=True)
-        _, train_state = run_epoch(
-            (Batch(b[0], b[1], pad_idx) for b in train_dataloader),
-            model,
-            SimpleLossCompute(module.generator, criterion),
-            optimizer,
-            lr_scheduler,
-            mode="train+log",
-            accum_iter=config["accum_iter"],
-            train_state=train_state,
-        )
-
-        GPUtil.showUtilization()
-        if is_main_process:
-            file_path = "%s%.2d.pt" % (config["file_prefix"], epoch)
-            torch.save(module.state_dict(), file_path)
-        torch.cuda.empty_cache()
-
-        logger.info(f"[GPU{gpu}] Epoch {epoch} Validation ====", flush=True)
-        model.eval()
-        sloss = run_epoch(
-            (Batch(b[0], b[1], pad_idx) for b in valid_dataloader),
-            model,
-            SimpleLossCompute(module.generator, criterion),
-            DummyOptimizer(),
-            DummyScheduler(),
-            mode="eval",
-        )
-        logger.info(sloss)
-        torch.cuda.empty_cache()
-
-    if is_main_process:
-        file_path = "%sfinal.pt" % config["file_prefix"]
-        torch.save(module.state_dict(), file_path)
-
-
-def train_distributed_model(vocab_src, vocab_tgt, spacy_de, spacy_en, config):
-    from the_annotated_transformer import train_worker
-
-    ngpus = torch.cuda.device_count()
-    os.environ["MASTER_ADDR"] = "localhost"
-    os.environ["MASTER_PORT"] = "12356"
-    logger.info(f"Number of GPUs detected: {ngpus}")
-    logger.info("Spawning training processes ...")
-    mp.spawn(
-        train_worker,
-        nprocs=ngpus,
-        args=(ngpus, vocab_src, vocab_tgt, spacy_de, spacy_en, config, True),
-    )
-
-
-def train_model(vocab_src, vocab_tgt, spacy_de, spacy_en, config):
-    if config["distributed"]:
-        train_distributed_model(vocab_src, vocab_tgt, spacy_de, spacy_en, config)
-    else:
-        train_worker(0, 1, vocab_src, vocab_tgt, spacy_de, spacy_en, config, False)
-
-
-def load_trained_model():
-    config = {
-        "batch_size": 32,
-        "distributed": False,
-        "num_epochs": 8,
-        "accum_iter": 10,
-        "base_lr": 1.0,
-        "max_padding": 72,
-        "warmup": 3000,
-        "file_prefix": "multi30k_model_",
-    }
-    model_path = "multi30k_model_final.pt"
-    if not Path(model_path).exists():
-        train_model(vocab_src, vocab_tgt, spacy_de, spacy_en, config)
-
-    model = make_model(len(vocab_src), len(vocab_tgt), N=6)
-    model.load_state_dict(torch.load("multi30k_model_final.pt"))
-
-    return model
 
 
 def my_load_trained_model(
@@ -2152,23 +2024,23 @@ def check_outputs(
     eos_string="</s>",
     max_len=72,
 ):
-    global logger
+    global log
     results = [()] * n_examples
     for idx in range(n_examples):
-        logger.info("\nExample %d ========\n" % idx)
+        log.info("\nExample %d ========\n" % idx)
         b = next(iter(valid_dataloader))
         rb = Batch(b[0], b[1], pad_idx)
-        logger.info(
+        log.info(
             f">> rb.src={rb.src} rb.src.size()={rb.src.size()} rb.src_mask.size()={rb.src_mask.size()}"
         )
 
         src_tokens = [vocab_src.get_itos()[x] for x in rb.src[0] if x != pad_idx]
         tgt_tokens = [vocab_tgt.get_itos()[x] for x in rb.tgt[0] if x != pad_idx]
 
-        logger.info(
+        log.info(
             "Source Text (Input)        : " + " ".join(src_tokens).replace("\n", "")
         )
-        logger.info(
+        log.info(
             "Target Text (Ground Truth) : " + " ".join(tgt_tokens).replace("\n", "")
         )
         # ys = greedy_decode(
@@ -2184,7 +2056,7 @@ def check_outputs(
         )
 
         model_out = ys[0]
-        logger.info(f"ys={ys.size()} model_out={model_out.size()}")
+        log.info(f"ys={ys.size()} model_out={model_out.size()}")
         model_txt = (
             " ".join(
                 [vocab_tgt.get_itos()[x] for x in model_out if x != pad_idx]
@@ -2204,7 +2076,7 @@ def check_outputs(
 def run_model_example(n_examples=5):
     global vocab_src, vocab_tgt, spacy_de, spacy_en
 
-    logger.info("Preparing Data ...")
+    log.info("Preparing Data ...")
     _, valid_dataloader = create_dataloaders(
         torch.device("cpu"),
         vocab_src,
@@ -2215,14 +2087,14 @@ def run_model_example(n_examples=5):
         is_distributed=False,
     )
 
-    logger.info("Loading Trained Model ...")
+    log.info("Loading Trained Model ...")
 
     model = make_model(len(vocab_src), len(vocab_tgt), N=6)
     model.load_state_dict(
         torch.load("multi30k_model_final.pt", map_location=torch.device("cpu"))
     )
 
-    logger.info("Checking Model Outputs:")
+    log.info("Checking Model Outputs:")
     example_data = check_outputs(
         valid_dataloader, model, vocab_src, vocab_tgt, n_examples=n_examples
     )

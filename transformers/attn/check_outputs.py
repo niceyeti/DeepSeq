@@ -28,9 +28,9 @@ _, spacy_en = architecture.load_tokenizers()
 # TODO: add a max sequence length parameter. The model has a fixed max input
 # size of 512 tokens, and sentences need to be truncated to that length or
 # omitted if too long.
-train_iter, val_iter = architecture.get_novel_sentence_iters(config["data_path"])
-
+# train_iter, val_iter = architecture.get_novel_sentence_iters(config["data_path"])
 # vocab = architecture.build_en_vocabulary(train_iter, val_iter, spacy_en)
+
 vocab = torch.load(f"{file_prefix}.pth")
 
 train_dataloader, valid_dataloader = architecture.create_seq_dataloaders(

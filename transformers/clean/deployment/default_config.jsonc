@@ -1,0 +1,34 @@
+{
+    // The batch size for training
+    "batch_size": 32,
+    // Whether or not training is distributed
+    "distributed": false,
+    // The number of epochs for which to train, as a static value.
+    "num_epochs": 36,
+    // Number of iterations to accumulate weight updates.
+    "accum_iter": 10,
+    // The number of layers, 6 in the original paper. The encoder and decoder will
+    // each have this number of layers.
+    "num_layers": 6,
+    // The model dimension, 512 in the original paper.
+    "d_model": 512,
+    "dropout": 0.1,
+    // The dimenson of the feed-forward network appended to each attention
+    // encoder/decoder layer.
+    "d_ff": 2048,
+    // The number of heads in multi-headed attention components.
+    "h": 8,
+    // The base learning rate.
+    "base_lr": 1.0,
+    // Max padding is the maximum padding but also effectively the maximum sequence
+    // length on which to train.
+    "max_padding": 72,
+    "warmup": 3000,
+    // The prefix by which models will be persisted and read back in. Model
+    // progress is saved at each epoch in a pt file with this prefix.
+    "file_prefix": "chuckleberryfinn_model",
+    // The training data path.
+    "data_path": "../attn//data/huckfinn_utf8.txt",
+    // The device: either "gpu" or "cpu" only. See torch docs.
+    "device": "cpu"
+}

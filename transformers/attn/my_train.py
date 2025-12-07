@@ -10,8 +10,7 @@
 # training such that generating from the model requires loading in exactly the
 # same vocabulary (size) and mappings. Persist the vocabulary and embedding
 # lookup tables at train time; in fact, save the entire config such that every
-# piece of the model is reproducible/deserializable.
-
+# piece of the model is reproducible/deserializable from training.
 
 import architecture
 import os

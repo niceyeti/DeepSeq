@@ -1,6 +1,6 @@
 
 SHELL := /bin/bash
-
+LOGLEVEL?=INFO
 
 # Rebuilds the venv. Currently the only known working combination is torch=2.3,
 # which is required by torchtext=0.18, since torchtext is no longer supported
@@ -22,8 +22,8 @@ diagnose:
 .PHONY: test-outputs
 test-outputs:
 	source venv/bin/activate && \
-	BEAM_LENGTH=12 \
-	LOGLEVEL=INFO \
+	BEAM_LENGTH=50 \
+	LOGLEVEL=$(LOGLEVEL) \
 	FILE_PREFIX=huckfinn \
 	MODEL_PATH=huckfinn_final.pt \
 		python check_outputs.py
