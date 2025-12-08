@@ -3,7 +3,6 @@
 # of training, such as the vocab and train/validation iters, etc.
 
 import os
-import json
 from pathlib import Path
 import logging
 import argparse
@@ -19,7 +18,8 @@ log = logging.getLogger()
 
 
 def main():
-    """"""
+    """This driver loads a built model and runs inference to generate and print
+    a few sample outputs."""
 
     parser = argparse.ArgumentParser(
         prog="Transformer",

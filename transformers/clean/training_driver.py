@@ -57,6 +57,11 @@ def main():
         )
         config: TransformerConfig = TransformerConfig.model_validate_json(config_json)
 
+    # Initialize the parent output directories for model artifacts, some of
+    # which are created at train time.
+    model_dir = Path(config.file_prefix).parent
+    os.makedirs(model_dir, exist_ok=True)
+
     log.info(
         f"""########################################################################
 Beginning training with {args.config} config:
@@ -64,7 +69,6 @@ Beginning training with {args.config} config:
 ########################################################################
 """
     )
-
     _, spacy_en = architecture.load_tokenizers()
 
     # TODO: add a max sequence length parameter. The model has a fixed max input
@@ -74,6 +78,8 @@ Beginning training with {args.config} config:
 
     vocab = architecture.build_en_vocabulary(train_iter, val_iter, spacy_en)
     architecture.save_vocab(vocab, f"{config.file_prefix}.pth")
+
+    architecture.my_train_worker(vocab, spacy_en, config)
 
 
 if __name__ == "__main__":

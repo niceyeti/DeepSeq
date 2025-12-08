@@ -26,18 +26,23 @@ rebuild-venv:
 		pip3 install -r requirements.txt
 
 
-# TODO: continue here, ensure that train and run are both compact and
-# well-encapsulated and invertible, etc. Create a super simple training dataset
-# of a few hundreds examples as a simple sw-test training set, such that this
-# can be used to train, plot training, and then reload the model for inference.
+# train-novel implements a novel-reader dataset iterator. See the huckfinn
+# example.
+#
+# TODO: implement line-based training iterator; it might be possible to convert
+# novels and most others to use a line-based protocol, and in fact this makes
+# the most sense. Move the text parsing upstream of the Transformer, instead of
+# having it implement them...? These training recipes are still in progress, the
+# novel approach was inherited from the proto, but line-based is needed. Namely,
+# this currently only works with '-c novel_config.jsonc'. 
 #
 # Train supports two workflows:
 # 1) set CONFIG_PATH to the path to a config for a model to train or load
 # 2) pass nothing: by default this will train on a default dataset used as a
 #    smoke test
-.PHONY: train
-train:
-	source venv/bin/activate && \
+.PHONY: train-novel
+train-novel:
+	source .venv/bin/activate && \
 		python training_driver.py -c $(CONFIG_PATH)
 
 
@@ -68,3 +73,5 @@ fmt:
 .PHONY: clean
 clean:
 	rm -rf .venv
+# Also blow away the temporary test model
+	rm -rf ./models/huck_test

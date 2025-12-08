@@ -1921,8 +1921,8 @@ def my_train_worker(
     criterion = LabelSmoothing(size=len(vocab), padding_idx=pad_idx, smoothing=0.1)
 
     train_dataloader, valid_dataloader = create_seq_dataloaders(
-        config["data_path"],
-        torch.device("cpu"),
+        config.data_path,
+        config.device,
         vocab,
         spacy_en,
         batch_size=config.batch_size,
@@ -1931,14 +1931,13 @@ def my_train_worker(
     )
 
     optimizer = torch.optim.Adam(
-        model.parameters(), lr=config["base_lr"], betas=(0.9, 0.98), eps=1e-9
+        model.parameters(), lr=config.base_lr, betas=(0.9, 0.98), eps=1e-9
     )
     # Sets the learning rate of each parameter group to the initial lr times a
     # given function. When last_epoch=-1, sets initial lr as lr.
     lr_scheduler = LambdaLR(
         optimizer=optimizer,
         lr_lambda=lambda step: rate(step, d_model, factor=1, warmup=config.warmup),
-        verbose=True,
     )
     train_state = TrainState()
 
@@ -1952,7 +1951,7 @@ def my_train_worker(
             optimizer,
             lr_scheduler,
             mode="train+log",
-            accum_iter=config["accum_iter"],
+            accum_iter=config.accum_iter,
             train_state=train_state,
         )
 
@@ -1978,14 +1977,6 @@ def my_train_worker(
         torch.save(module.state_dict(), file_path)
 
     return model
-
-
-def my_generation(model: EncoderDecoder, vocab: Vocab):
-    src_text = "the widow she cried over me and called me a poor lost lamb".split(" ")
-    src = torch.LongTensor([[0, 1, 2, 3, 4, 5, 6, 7, 8, 9]])
-    max_len = src.shape[1]
-    src_mask = torch.ones(1, 1, max_len)
-    print(greedy_decode(model, src, src_mask, max_len=max_len, start_symbol=0))
 
 
 def my_load_trained_model(
