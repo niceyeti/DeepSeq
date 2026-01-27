@@ -1,17 +1,20 @@
 # Description: this makefile is intended to mock out similar workflows to the
 # desired api of a transformer for train/test.
 
-
 SHELL:=/bin/bash
-# TODO: create a very small test-dataset
-DATA_PATH?=../attn/data/huckfinn.txt
-CONFIG_PATH?=./depoloyment/default_config.jsonc
+
+#DATA_PATH?=../attn/data/huckfinn.txt
+DATA_PATH?=./data/fb_lines.txt
+
+CONFIG_PATH?=./deployment/default_config.jsonc
+
+# Use DEBUG to view gritty model outputs, tensor dimensions, etc.
 LOG_LEVEL?=WARNING
 
 
 # Rebuilds the venv. Currently the only known working combination is torch=2.3,
 # which is required by torchtext=0.18, since torchtext is no longer supported
-# and only supports torch 2.3
+# and only supports torch 2.3.
 #
 # TODO: add requirements.txt to a pyproject.toml and use its build chain
 # instead, even uv if possible.
@@ -45,6 +48,12 @@ train-novel:
 	source .venv/bin/activate && \
 		python training_driver.py -c $(CONFIG_PATH)
 
+#
+# .PHONY: test-english-to-german
+# test-english-to-german:
+# 	source .venv/bin/activate && \
+# 		python training_driver.py -c $(CONFIG_PATH)
+
 
 # check-outputs takes a fully trained model and its config, then generates
 # output one token at a time by sampling. This is currently configured for
@@ -75,3 +84,14 @@ clean:
 	rm -rf .venv
 # Also blow away the temporary test model
 	rm -rf ./models/huck_test
+
+
+
+###############################################################################
+# These recipes are all experimental and not guaranteed up to date.
+###############################################################################
+
+.PHONY: fb-data
+fb-data:
+	FB_DATA_PATH=./data/fb_data.py \
+		python ./scripts/fb_data_to_lines.py > ./data/fb_lines.txt
