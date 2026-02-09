@@ -44,7 +44,7 @@ def main():
             ]
         )
         config: TransformerConfig = TransformerConfig.model_validate_json(config_json)
-
+        config = config.read_from_env()
     log.info(
         f"""########################################################################
 Beginning training with {args.config} config:

@@ -5,8 +5,12 @@ import logging
 import math
 import copy
 import time
+
+# FUTURE: would like to dump python dataclass usage and use pydantic instead.
 from dataclasses import dataclass
-from typing import Generator as TGenerator, Tuple, List
+from pydantic.dataclasses import dataclass as pydantic_dataclass
+from pydantic import BaseModel
+from typing import Generator as TGenerator, Tuple, List, Callable
 from pathlib import Path
 
 import torch
@@ -744,7 +748,7 @@ def run_epoch(
     mode="train",
     accum_iter=1,
     train_state=TrainState(),
-):
+) -> Tuple[float, TrainState]:
     """Train a single epoch"""
     start = time.time()
     total_tokens = 0
@@ -1892,24 +1896,40 @@ def create_seq_dataloaders(
     return train_dataloader, valid_dataloader
 
 
-# Adapted from train_worker, this version is my own for training on
-# straightforward language prediction: given sequences, encode/decode them in
-# training, and at generation time generate one token at a time.
-#
-# No gpu was used here, because my laptop doesn't have one and this is just to
-# develop the code.
+class EpochMetrics(BaseModel):
+    """
+    EpochMetrics is a small serializable class for reporting back per-epoch
+    metrics: training and validation loss. This is primarily for visualization
+    and inspection of performance.
+    """
+
+    epoch: int
+    training_loss: float
+    validation_loss: float
+
+
 def my_train_worker(
     vocab: Vocab,
     spacy_en: Language,
     config: TransformerConfig,
+    report_epoch: Callable[[EpochMetrics], None] = lambda _: None,
 ) -> EncoderDecoder:
+    """my_train_worker was adapted from train_worker for training on
+    straightforward language prediction: given sequences, encode/decode them in
+    training, and at generation time generate one token at a time. Training and
+    validation loss are saved per epoch and reported via report_epoch (if
+    passed). No gpu was used here, because my laptop doesn't have one and this
+    is just to develop the code.
+
+    Returns: the trained EncoderDecoder.
+    """
     pad_idx = vocab["<blank>"]
     d_model = config.d_model
     num_layers = config.num_layers
     num_epochs = config.num_epochs
 
     log.info(
-        f"Training params: pad_idx={pad_idx} d_model={d_model} num_layers={num_layers} num_epochs={num_epochs} vocab-len={len(vocab)}"
+        f"Training params: pad_idx={pad_idx} vocab-len={len(vocab)}\nconfig={config.model_dump_json(indent=2)}"
     )
 
     model = make_model(len(vocab), len(vocab), N=num_layers, d_model=d_model)
@@ -1944,7 +1964,7 @@ def my_train_worker(
     for epoch in range(num_epochs):
         model.train()
         log.info(f"CPU Epoch {epoch} Training ====", flush=True)
-        _, train_state = run_epoch(
+        train_loss, train_state = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in train_dataloader),
             model,
             SimpleLossCompute(module.generator, criterion),
@@ -1954,6 +1974,7 @@ def my_train_worker(
             accum_iter=config.accum_iter,
             train_state=train_state,
         )
+        log.info("Epoch %d training loss: %f", epoch, train_loss)
 
         if is_main_process:
             file_path = "%s_%.2d.pt" % (config.file_prefix, epoch)
@@ -1962,7 +1983,7 @@ def my_train_worker(
 
         log.info(f"Epoch {epoch} Validation ====", flush=True)
         model.eval()
-        sloss = run_epoch(
+        validation_loss, _ = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in valid_dataloader),
             model,
             SimpleLossCompute(module.generator, criterion),
@@ -1970,7 +1991,13 @@ def my_train_worker(
             DummyScheduler(),
             mode="eval",
         )
-        log.info(sloss)
+        log.info("Epoch %d validation loss: %f", epoch, validation_loss)
+
+        report_epoch(
+            EpochMetrics(
+                epoch=epoch, training_loss=train_loss, validation_loss=validation_loss
+            )
+        )
 
     if is_main_process:
         file_path = "%s_final.pt" % config.file_prefix

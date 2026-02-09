@@ -4,7 +4,7 @@
     // Whether or not training is distributed
     "distributed": false,
     // The number of epochs for which to train, as a static value.
-    "num_epochs": 36,
+    "num_epochs": 3,
     // Number of iterations to accumulate weight updates.
     "accum_iter": 10,
     // The number of layers, 6 in the original paper. The encoder and decoder will
@@ -26,9 +26,11 @@
     "warmup": 3000,
     // The prefix by which models will be persisted and read back in. Model
     // progress is saved at each epoch in a pt file with this prefix.
-    "file_prefix": "fb_news",
+    "file_prefix": "./models/test/fb_news",
     // The training data path.
     "data_path": "./data/fb_lines.txt",
+    // The name of the trained model, once completed.
+    "model_path": "./models/test/fb_news_final.pt",
     // The device: either "gpu" or "cpu" only. See torch docs.
     "device": "cpu"
 }

@@ -20,3 +20,4 @@ black
 GPUtil
 wandb
 pydantic
+matplotlib

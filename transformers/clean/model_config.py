@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import os
+
 from pydantic import BaseModel
 
 # Ignore file naming, this module may contain multiple configs in the future,
@@ -8,6 +12,9 @@ class TransformerConfig(BaseModel):
     """
     ModelConfig contains all of the parameters for the transformer. This is
     directly serializable to json and should remain as such.
+
+    All fields are overridable via env vars using
+    'TRANSFORMER_[uppercase-field-name]=[value].'
 
     ModelConfig operates in two modes: training and prod. In training, there is
     no previous model or vocabulary stored, and the config definition drives the
@@ -45,12 +52,37 @@ class TransformerConfig(BaseModel):
     warmup: int = 3000
     # The prefix by which models will be persisted and read back in. Model
     # progress is saved at each epoch in a pt file with this prefix.
-    file_prefix: str = "chuckleberryfinn_model"
+    file_prefix: str = "./models/test/fb_news"
     # The training data path.
-    data_path: str = "./data/huckfinn_utf8.txt"
+    data_path: str = "./data/fb_lines.txt"
     # The path to a saved model. This is only used in inference/prod to load
     # a saved model.
-    model_path: str = "./model_final.pt"
+    #
+    # TODO: keep an eye on this attribute, it may be derivable from file_prefix instead.
+    model_path: str = "./models/test/fb_news_final.pt"
     # Device must be either "cpu" or "gpu", and is passed directly to torch.
     # See torch docs.
     device: str = "cpu"
+
+    def read_from_env(self) -> TransformerConfig:
+        """
+        read_from_env can be called to override any config field from env vars,
+        prefixed by 'Transformer' and formatted like "TRANSFORMER_[uppercase
+        attribute]=[new value]". The string value of the env var is passed to
+        the ctor for that field's type, thus inheriting pythonic semantics for
+        every field and only support basic types.
+
+        I'm only doing this because I'm unaware of a builtin way to do it using
+        pydantic, but this is also the simplest."""
+        clone = self.model_copy()
+        for key, val in clone.__dict__.items():
+            env_var_name = "TRANSFORMER_" + key.upper()
+            if env_var_name in os.environ:
+                # 'TRANSFORMER_[attribute name]' is set, so map it to its target
+                # type and override the current value. We borrow from python's
+                # own type rules for converting the string env var value,
+                # passing this directly to the constructor for the type.
+                new_val = os.environ[env_var_name]
+                clone.__dict__[key] = type(val)(new_val)
+
+        return self.model_validate(clone)

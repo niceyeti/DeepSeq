@@ -14,11 +14,13 @@
 
 import logging
 import os
+import json
 import argparse
 from pathlib import Path
 
 import architecture
 from model_config import TransformerConfig
+import matplotlib.pyplot as plt
 
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
@@ -56,6 +58,7 @@ def main():
             ]
         )
         config: TransformerConfig = TransformerConfig.model_validate_json(config_json)
+        config = config.read_from_env()
 
     # Initialize the parent output directories for model artifacts, some of
     # which are created at train time.
@@ -79,7 +82,33 @@ Beginning training with {args.config} config:
     vocab = architecture.build_en_vocabulary(train_iter, val_iter, spacy_en)
     architecture.save_vocab(vocab, f"{config.file_prefix}.pth")
 
-    architecture.my_train_worker(vocab, spacy_en, config)
+    loss_path = Path(f"{config.file_prefix}.loss")
+
+    def append_loss(metrics: architecture.EpochMetrics):
+        with open(loss_path, "a+", encoding="utf8") as loss_file:
+            loss_file.write(metrics.model_dump_json(indent=None) + "\n")
+
+    architecture.my_train_worker(vocab, spacy_en, config, report_epoch=append_loss)
+
+    with open(loss_path, "r", encoding="utf8") as loss_file:
+        losses = [
+            architecture.EpochMetrics.model_validate_json(line)
+            for line in filter(len, loss_file.readlines())
+        ]
+
+    training_losses = [loss.training_loss for loss in losses]
+    validation_losses = [loss.validation_loss for loss in losses]
+    epochs = [loss.epoch for loss in losses]
+
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, training_losses)
+    plt.title("Training Loss Per Epoch")
+
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, validation_losses)
+    plt.title("Validation Loss Per Epoch")
+    plt.tight_layout()
+    plt.savefig(Path(f"{config.file_prefix}.loss.png"))
 
 
 if __name__ == "__main__":

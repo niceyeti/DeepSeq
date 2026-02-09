@@ -3,7 +3,6 @@
 
 SHELL:=/bin/bash
 
-#DATA_PATH?=../attn/data/huckfinn.txt
 DATA_PATH?=./data/fb_lines.txt
 
 CONFIG_PATH?=./deployment/default_config.jsonc
@@ -31,13 +30,6 @@ rebuild-venv:
 
 # train-novel implements a novel-reader dataset iterator. See the huckfinn
 # example.
-#
-# TODO: implement line-based training iterator; it might be possible to convert
-# novels and most others to use a line-based protocol, and in fact this makes
-# the most sense. Move the text parsing upstream of the Transformer, instead of
-# having it implement them...? These training recipes are still in progress, the
-# novel approach was inherited from the proto, but line-based is needed. Namely,
-# this currently only works with '-c novel_config.jsonc'. 
 #
 # Train supports two workflows:
 # 1) set CONFIG_PATH to the path to a config for a model to train or load
