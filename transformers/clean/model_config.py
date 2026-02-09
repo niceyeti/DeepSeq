@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import os
+import logging
 
 from pydantic import BaseModel
+
+
+logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
+log = logging.getLogger()
 
 # Ignore file naming, this module may contain multiple configs in the future,
 # i.e. for Encoder-only architectures and other variants.
@@ -75,7 +80,7 @@ class TransformerConfig(BaseModel):
         I'm only doing this because I'm unaware of a builtin way to do it using
         pydantic, but this is also the simplest."""
         clone = self.model_copy()
-        for key, val in clone.__dict__.items():
+        for key, prev_val in clone.__dict__.items():
             env_var_name = "TRANSFORMER_" + key.upper()
             if env_var_name in os.environ:
                 # 'TRANSFORMER_[attribute name]' is set, so map it to its target
@@ -83,6 +88,13 @@ class TransformerConfig(BaseModel):
                 # own type rules for converting the string env var value,
                 # passing this directly to the constructor for the type.
                 new_val = os.environ[env_var_name]
-                clone.__dict__[key] = type(val)(new_val)
+                log.info(
+                    "%s overriding config.%s from %s to %s",
+                    env_var_name,
+                    key,
+                    prev_val,
+                    new_val,
+                )
+                clone.__dict__[key] = type(prev_val)(new_val)
 
         return self.model_validate(clone)
