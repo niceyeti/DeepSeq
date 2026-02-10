@@ -14,17 +14,39 @@
 
 import logging
 import os
-import json
 import argparse
 from pathlib import Path
 
+import matplotlib.pyplot as plt
+
 import architecture
 from model_config import TransformerConfig
-import matplotlib.pyplot as plt
 
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
 log = logging.getLogger()
+
+
+def plot_losses(loss_path: Path, save_path: Path):
+    with open(loss_path, "r", encoding="utf8") as loss_file:
+        losses = [
+            architecture.EpochMetrics.model_validate_json(line)
+            for line in filter(len, loss_file.readlines())
+        ]
+
+    training_losses = [loss.training_loss for loss in losses]
+    validation_losses = [loss.validation_loss for loss in losses]
+    epochs = [loss.epoch for loss in losses]
+
+    plt.subplot(1, 2, 1)
+    plt.plot(epochs, training_losses)
+    plt.title("Training Loss Per Epoch")
+
+    plt.subplot(1, 2, 2)
+    plt.plot(epochs, validation_losses)
+    plt.title("Validation Loss Per Epoch")
+    plt.tight_layout()
+    plt.savefig(save_path)
 
 
 def main():
@@ -83,32 +105,18 @@ Beginning training with {args.config} config:
     architecture.save_vocab(vocab, f"{config.file_prefix}.pth")
 
     loss_path = Path(f"{config.file_prefix}.loss")
+    # zero the existing loss file
+    loss_path.write_text("", encoding="utf8", newline="")
 
     def append_loss(metrics: architecture.EpochMetrics):
         with open(loss_path, "a+", encoding="utf8") as loss_file:
             loss_file.write(metrics.model_dump_json(indent=None) + "\n")
 
-    architecture.my_train_worker(vocab, spacy_en, config, report_epoch=append_loss)
-
-    with open(loss_path, "r", encoding="utf8") as loss_file:
-        losses = [
-            architecture.EpochMetrics.model_validate_json(line)
-            for line in filter(len, loss_file.readlines())
-        ]
-
-    training_losses = [loss.training_loss for loss in losses]
-    validation_losses = [loss.validation_loss for loss in losses]
-    epochs = [loss.epoch for loss in losses]
-
-    plt.subplot(1, 2, 1)
-    plt.plot(epochs, training_losses)
-    plt.title("Training Loss Per Epoch")
-
-    plt.subplot(1, 2, 2)
-    plt.plot(epochs, validation_losses)
-    plt.title("Validation Loss Per Epoch")
-    plt.tight_layout()
-    plt.savefig(Path(f"{config.file_prefix}.loss.png"))
+    try:
+        architecture.my_train_worker(vocab, spacy_en, config, report_epoch=append_loss)
+    finally:
+        # plot, even on ctrl+c sigterm
+        plot_losses(loss_path, Path(f"{config.file_prefix}.loss.png"))
 
 
 if __name__ == "__main__":

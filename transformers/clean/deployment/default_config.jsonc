@@ -4,7 +4,7 @@
     // Whether or not training is distributed
     "distributed": false,
     // The number of epochs for which to train, as a static value.
-    "num_epochs": 3,
+    "num_epochs": 100,
     // Number of iterations to accumulate weight updates.
     "accum_iter": 10,
     // The number of layers, 6 in the original paper. The encoder and decoder will

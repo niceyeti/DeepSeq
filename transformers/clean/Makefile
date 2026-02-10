@@ -28,6 +28,9 @@ rebuild-venv:
 		pip3 install -r requirements.txt
 
 
+# TODO: I modified the parameter-saving schedule to minimize disk usage, but
+# this rate could be passed into the worker.
+#
 # train-novel implements a novel-reader dataset iterator. See the huckfinn
 # example.
 #
@@ -35,10 +38,12 @@ rebuild-venv:
 # 1) set CONFIG_PATH to the path to a config for a model to train or load
 # 2) pass nothing: by default this will train on a default dataset used as a
 #    smoke test
-.PHONY: train-novel
-train-novel:
+.PHONY: train
+train:
 	source .venv/bin/activate && \
 		python training_driver.py -c $(CONFIG_PATH)
+
+
 
 #
 # .PHONY: test-english-to-german

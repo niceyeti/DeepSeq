@@ -80,7 +80,7 @@ Beginning training with {args.config} config:
     log.info(f"Model loaded from {config.model_path}")
 
     architecture.check_outputs(
-        valid_dataloader,
+        train_dataloader,
         trained_model,
         vocab,
         vocab,

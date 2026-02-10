@@ -88,7 +88,7 @@ class TransformerConfig(BaseModel):
                 # own type rules for converting the string env var value,
                 # passing this directly to the constructor for the type.
                 new_val = os.environ[env_var_name]
-                log.info(
+                log.warning(
                     "%s overriding config.%s from %s to %s",
                     env_var_name,
                     key,

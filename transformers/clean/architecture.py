@@ -1976,7 +1976,7 @@ def my_train_worker(
         )
         log.info("Epoch %d training loss: %f", epoch, train_loss)
 
-        if is_main_process:
+        if is_main_process and (epoch % 15 == 14):
             file_path = "%s_%.2d.pt" % (config.file_prefix, epoch)
             torch.save(module.state_dict(), file_path)
         torch.cuda.empty_cache()
@@ -2003,6 +2003,7 @@ def my_train_worker(
         file_path = "%s_final.pt" % config.file_prefix
         torch.save(module.state_dict(), file_path)
 
+    print(f"{num_epochs} epochs completed")
     return model
 
 
