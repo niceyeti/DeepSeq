@@ -62,10 +62,20 @@ train:
 # that breaking them out is weird, and they don't fully belong in the model
 # config. Instead, the prod-time config could just be cli flags read with
 # argparse.
+#
+# TODO: be sure you vary BEAM_LENGTH and don't just trust 'check-outputs' as a
+# qualitative check. It may be a bug, or logical/behavioral bug, but a
+# beam-length of 1000 caused the model to output nothing, such that the most
+# likely output is shortened; a beam-length of 25 was closer to natural
+# language.
+#
+# TODO: evaluate beam for bugs. Large BEAM_LENGTH results in less sensible
+# output and ultimately empty output; shorter lengths output more reasonable
+# expressions. Something may be wrong with the summing of sequence probability.
 .PHONY: check-outputs
 check-outputs:
 	source .venv/bin/activate && \
-	BEAM_LENGTH=50 \
+	BEAM_LENGTH=10 \
 	LOG_LEVEL=WARNING \
 		python check_outputs_driver.py -c $(CONFIG_PATH)
 

@@ -17,9 +17,11 @@ import os
 import argparse
 from pathlib import Path
 
+import torch
 import matplotlib.pyplot as plt
 
 import architecture
+from architecture import EpochMetrics, EncoderDecoder
 from model_config import TransformerConfig
 
 
@@ -30,7 +32,7 @@ log = logging.getLogger()
 def plot_losses(loss_path: Path, save_path: Path):
     with open(loss_path, "r", encoding="utf8") as loss_file:
         losses = [
-            architecture.EpochMetrics.model_validate_json(line)
+            EpochMetrics.model_validate_json(line)
             for line in filter(len, loss_file.readlines())
         ]
 
@@ -108,14 +110,41 @@ Beginning training with {args.config} config:
     # zero the existing loss file
     loss_path.write_text("", encoding="utf8", newline="")
 
-    def append_loss(metrics: architecture.EpochMetrics):
+    def persist_epoch(metrics: EpochMetrics, model: EncoderDecoder):
+        """persist_epoch saves the metrics for the epoch to file so that once
+        training is completed, they can be read and plotted. It also tracks the
+        best validation error and saves the model weights, so this is the
+        callback by which to implement persistence logic (MLFlow integration,
+        etc).
+        """
+        # Save model weights if this one has the best validation error. Note
+        # this is where the entire model could be saved every n-epochs, etc, but
+        # saving only the best model per validation error is all we're
+        # interested in now.
+        with open(loss_path, "r", encoding="utf8") as loss_file:
+            losses = [
+                EpochMetrics.model_validate_json(line)
+                for line in loss_file.readlines()
+                if line.strip()
+            ]
+        min_validation_error = min(
+            map(lambda l: l.validation_loss, losses), default=99999
+        )
+        if metrics.validation_loss < min_validation_error:
+            file_path = "%s_best.pt" % config.file_prefix
+            torch.save(model.state_dict(), file_path)
+
+        # Append the new metrics. Note this should be done after comparing the
+        # losses on file, or the new metrics would be in the compared set.
         with open(loss_path, "a+", encoding="utf8") as loss_file:
             loss_file.write(metrics.model_dump_json(indent=None) + "\n")
 
     try:
-        architecture.my_train_worker(vocab, spacy_en, config, report_epoch=append_loss)
+        architecture.my_train_worker(
+            vocab, spacy_en, config, report_epoch=persist_epoch
+        )
     finally:
-        # plot, even on ctrl+c sigterm
+        # Plots losses, even on ctrl+c sigterm exit.
         plot_losses(loss_path, Path(f"{config.file_prefix}.loss.png"))
 
 

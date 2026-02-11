@@ -1717,64 +1717,78 @@ def create_dataloaders(
     return train_dataloader, valid_dataloader
 
 
-def read_novel_sentences(fpath: str):
-    lines = []
-    # Read all lines, omitting empty lines and those starting with "CHAPTER"
-    with open(fpath, "r", encoding="utf8") as ifile:
-        lines = [
-            line.strip()
-            for line in ifile.readlines()
-            if len(line.strip()) > 0 and not line.strip().startswith("CHAPTER")
-        ]
-    # Common delimiters in huckfinn
-    sentence_delimiters = set(["?", ".", ":", "!", ";"])
-    # Wastefully join the entire sequence so it can be split on sentence
-    # delimiters more simply.
-    unsafe_huge_string = " ".join(lines)
-    del lines
+def read_novel_sentences(fpath: str) -> TGenerator[str, None, None]:
+    """read_novel_sentences reads a novel-like file, which is any file
+    whose lines extend sentences over one or more lines, like the hucklberry
+    finn opensource novel.
 
-    sentences = []
-    start = 0
-    end_index = 1
-    while start < len(unsafe_huge_string) and end_index < len(unsafe_huge_string):
-        # Consume input until we find the start of next sentence.
-        if unsafe_huge_string[end_index] in sentence_delimiters:
-            sentence = unsafe_huge_string[start:end_index].strip()
-            start = end_index + 1
-            end_index = start + 1
-            if len(sentence) > 0:
-                sentences.append(sentence)
-        end_index += 1
-
-    del unsafe_huge_string
-    return sentences
-
-
-def clean_novel_sentences(lines: List[str]) -> List[str]:
+    Note that this is super inefficient, because in order to cleanly break on
+    lines, I concatenate all lines into a single string to break it on
+    delimiters. Hence this is not yet a useful per-line protocol and assumes a
+    modest file size.
     """
-    Given a list of sentences from some novel, which are language sequences
-    broken at sentence delimiters like "?" and ".", we still need to do some
-    additional cleaning. There are probably better libraries for this by now,
-    but for now this is just ad hoc cleaning. Lowercase and remove all
-    punctuation; this way the model will just learn language relations. It would
-    be nice to additionally tokenize with wordpieces after this step.
-    """
-    # FUTURE: leverage libraries or use string.punctuation and other builtins.
-    #
-    # TODO: it might be interesting to leave command and ending chars, to see
-    # how the model concludes with 'voice'.
-    characters_to_remove = "[.,!]()?\"“”'‘’`{}*:"
-    t_table = dict()
-    for c in characters_to_remove:
-        t_table[c] = None
-    # Some characters should be replaced with a space, like "-" in "and then—as
-    # I was saying—he went to the farm..."
-    t_table["—"] = " "
-    t_table["-"] = " "
 
-    t_table = str.maketrans(t_table)
+    def read_lines() -> TGenerator[str, None, None]:
+        try:
+            novel_file = open(fpath, "r", encoding="utf8")
+            for line in [line.strip() for line in novel_file.readlines()]:
+                if line and not line.startswith("CHAPTER"):
+                    yield line
+        finally:
+            novel_file.close()
 
-    return [line.lower().translate(t_table) for line in lines]
+    def as_sentences(lines: TGenerator[str, None, None]) -> TGenerator[str, None, None]:
+        # Common delimiters in huckfinn
+        sentence_delimiters = set(["?", ".", ":", "!", ";"])
+        # Wastefully join the entire sequence so it can be split on sentence
+        # delimiters more simply.
+        unsafe_huge_string = " ".join(lines)
+        del lines
+
+        start = 0
+        end_index = 1
+        while start < len(unsafe_huge_string) and end_index < len(unsafe_huge_string):
+            # Consume input until we find the start of next sentence.
+            if unsafe_huge_string[end_index] in sentence_delimiters:
+                sentence = unsafe_huge_string[start:end_index].strip()
+                start = end_index + 1
+                end_index = start + 1
+                if sentence:
+                    yield sentence
+            end_index += 1
+
+        del unsafe_huge_string
+
+    def clean_sentences(
+        lines: TGenerator[str, None, None],
+    ) -> TGenerator[str, None, None]:
+        """
+        Given a list of sentences from some novel, which are language sequences
+        broken at sentence delimiters like "?" and ".", we still need to do some
+        additional cleaning. There are probably better libraries for this by now,
+        but for now this is just ad hoc cleaning. Lowercase and remove all
+        punctuation; this way the model will just learn language relations. It would
+        be nice to additionally tokenize with wordpieces after this step.
+        """
+        # FUTURE: leverage libraries or use string.punctuation and other builtins.
+        #
+        # TODO: it might be interesting to leave command and ending chars, to see
+        # how the model concludes with 'voice'.
+        characters_to_remove = "[.,!]()?\"“”'‘’`{}*:"
+        t_table = dict()
+        for c in characters_to_remove:
+            t_table[c] = None
+        # Some characters should be replaced with a space, like "-" in "and then—as
+        # I was saying—he went to the farm..."
+        t_table["—"] = " "
+        t_table["-"] = " "
+
+        t_table = str.maketrans(t_table)
+
+        for line in lines:
+            yield line.lower().translate(t_table)
+
+    return clean_sentences(as_sentences(read_lines()))
 
 
 def get_novel_sentence_iters(
@@ -1794,8 +1808,7 @@ def get_novel_sentence_iters(
     This returns the sentences as-is, no additional parsing. The tokenizer will
     take care of that, plus any other hooks to condition the text.
     """
-    lines = read_novel_sentences(fpath)
-    lines = clean_novel_sentences(lines)
+    lines = list(read_novel_sentences(fpath))
     with open("train_lines.txt", "w+") as ofile:
         for line in lines:
             ofile.write(line + "\n")
@@ -1912,7 +1925,7 @@ def my_train_worker(
     vocab: Vocab,
     spacy_en: Language,
     config: TransformerConfig,
-    report_epoch: Callable[[EpochMetrics], None] = lambda _: None,
+    report_epoch: Callable[[EpochMetrics, EncoderDecoder], None] = lambda _: None,
 ) -> EncoderDecoder:
     """my_train_worker was adapted from train_worker for training on
     straightforward language prediction: given sequences, encode/decode them in
@@ -1976,9 +1989,6 @@ def my_train_worker(
         )
         log.info("Epoch %d training loss: %f", epoch, train_loss)
 
-        if is_main_process and (epoch % 15 == 14):
-            file_path = "%s_%.2d.pt" % (config.file_prefix, epoch)
-            torch.save(module.state_dict(), file_path)
         torch.cuda.empty_cache()
 
         log.info(f"Epoch {epoch} Validation ====", flush=True)
@@ -1996,7 +2006,8 @@ def my_train_worker(
         report_epoch(
             EpochMetrics(
                 epoch=epoch, training_loss=train_loss, validation_loss=validation_loss
-            )
+            ),
+            model,
         )
 
     if is_main_process:
