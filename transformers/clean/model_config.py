@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import os
 import logging
+from pathlib import Path
 
 from pydantic import BaseModel
 
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
-log = logging.getLogger()
+logger = logging.getLogger()
 
 # Ignore file naming, this module may contain multiple configs in the future,
 # i.e. for Encoder-only architectures and other variants.
@@ -70,12 +71,12 @@ class TransformerConfig(BaseModel):
     device: str = "cpu"
 
     def read_from_env(self) -> TransformerConfig:
-        """
-        read_from_env can be called to override any config field from env vars,
+        """read_from_env can be called to override any config field from env vars,
         prefixed by 'Transformer' and formatted like "TRANSFORMER_[uppercase
-        attribute]=[new value]". The string value of the env var is passed to
-        the ctor for that field's type, thus inheriting pythonic semantics for
-        every field and only support basic types.
+        attribute]=[new value]", i.e. "TRANSFORMER_D_MODEL=256". The string
+        value of the env var is passed to the ctor for that field's type, thus
+        inheriting pythonic semantics for every field and only support basic
+        types.
 
         I'm only doing this because I'm unaware of a builtin way to do it using
         pydantic, but this is also the simplest."""
@@ -88,7 +89,7 @@ class TransformerConfig(BaseModel):
                 # own type rules for converting the string env var value,
                 # passing this directly to the constructor for the type.
                 new_val = os.environ[env_var_name]
-                log.warning(
+                logger.warning(
                     "%s overriding config.%s from %s to %s",
                     env_var_name,
                     key,
@@ -98,3 +99,17 @@ class TransformerConfig(BaseModel):
                 clone.__dict__[key] = type(prev_val)(new_val)
 
         return self.model_validate(clone)
+
+    @staticmethod
+    def load(config_path: Path) -> TransformerConfig:
+        """load_config loads a config from the passed path."""
+        with open(config_path, "r", encoding="utf8") as config_file:
+            config_json = "".join(
+                [
+                    line.strip()
+                    for line in config_file.readlines()
+                    if not line.strip().startswith("//")
+                ]
+            )
+        config: TransformerConfig = TransformerConfig.model_validate_json(config_json)
+        return config.read_from_env()

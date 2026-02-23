@@ -35,19 +35,10 @@ def main():
     )
     args = parser.parse_args()
 
-    with open(args.config, "r", encoding="utf8") as config_file:
-        config_json = "".join(
-            [
-                line.strip()
-                for line in config_file.readlines()
-                if not line.strip().startswith("//")
-            ]
-        )
-        config: TransformerConfig = TransformerConfig.model_validate_json(config_json)
-        config = config.read_from_env()
+    config = TransformerConfig.load(args.config).read_from_env()
     log.info(
         f"""########################################################################
-Beginning training with {args.config} config:
+Beginning check-outputs with {args.config} config:
 {config.model_dump_json(indent=4)}
 ########################################################################
 """
@@ -60,11 +51,18 @@ Beginning training with {args.config} config:
     # omitted if too long.
     # train_iter, val_iter = architecture.get_novel_sentence_iters(config.data_path)
 
-    vocab = architecture.load_vocab(Path(f"{config.file_prefix}.pth"))
+    vocab_path = Path(f"{config.file_prefix}.pth")
+    if not vocab_path.exists():
+        raise ValueError(
+            f"Vocab path {vocab_path} not found; inferred .pth file"
+            + f" from config file_prefix: {config.file_prefix}"
+        )
+    vocab = architecture.load_vocab(vocab_path)
 
+    device = torch.device(config.device)
     train_dataloader, valid_dataloader = architecture.create_seq_dataloaders(
         config.data_path,
-        torch.device(config.device),
+        device,
         vocab,
         spacy_en,
         batch_size=config.batch_size,
@@ -72,10 +70,13 @@ Beginning training with {args.config} config:
         is_distributed=False,
     )
 
+    # Src and tgt vocab length are the same because I've been training a
+    # Transformer on its own input sequences as output, for single language
+    # prediction, not for translation.
     trained_model = architecture.my_load_trained_model(
-        vocab,
-        vocab,
-        config,
+        src_vocab_size=len(vocab),
+        tgt_vocab_size=len(vocab),
+        config=config,
     )
     log.info(f"Model loaded from {config.model_path}")
 

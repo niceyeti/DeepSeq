@@ -72,10 +72,13 @@ train:
 # TODO: evaluate beam for bugs. Large BEAM_LENGTH results in less sensible
 # output and ultimately empty output; shorter lengths output more reasonable
 # expressions. Something may be wrong with the summing of sequence probability.
+#
+# Set BEAM_LENGTH=1 for greedy decoding. As far as design, beam-length functions
+# like a hyper-parameter in several ways.
 .PHONY: check-outputs
 check-outputs:
 	source .venv/bin/activate && \
-	BEAM_LENGTH=10 \
+	BEAM_LENGTH=30 \
 	LOG_LEVEL=WARNING \
 		python check_outputs_driver.py -c $(CONFIG_PATH)
 

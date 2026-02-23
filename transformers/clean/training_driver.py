@@ -73,16 +73,7 @@ def main():
     )
     args = parser.parse_args()
 
-    with open(args.config, "r", encoding="utf8") as config_file:
-        config_json = "".join(
-            [
-                line.strip()
-                for line in config_file.readlines()
-                if not line.strip().startswith("//")
-            ]
-        )
-        config: TransformerConfig = TransformerConfig.model_validate_json(config_json)
-        config = config.read_from_env()
+    config = TransformerConfig.load(args.config).read_from_env()
 
     # Initialize the parent output directories for model artifacts, some of
     # which are created at train time.
@@ -131,8 +122,7 @@ Beginning training with {args.config} config:
             map(lambda l: l.validation_loss, losses), default=99999
         )
         if metrics.validation_loss < min_validation_error:
-            file_path = "%s_best.pt" % config.file_prefix
-            torch.save(model.state_dict(), file_path)
+            torch.save(model.state_dict(), f"{config.file_prefix}_best.pt")
 
         # Append the new metrics. Note this should be done after comparing the
         # losses on file, or the new metrics would be in the compared set.
@@ -144,7 +134,7 @@ Beginning training with {args.config} config:
             vocab, spacy_en, config, report_epoch=persist_epoch
         )
     finally:
-        # Plots losses, even on ctrl+c sigterm exit.
+        # Plots losses, even on ctrl+c sigterm.
         plot_losses(loss_path, Path(f"{config.file_prefix}.loss.png"))
 
 

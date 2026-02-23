@@ -8,7 +8,6 @@ import time
 
 # FUTURE: would like to dump python dataclass usage and use pydantic instead.
 from dataclasses import dataclass
-from pydantic.dataclasses import dataclass as pydantic_dataclass
 from pydantic import BaseModel
 from typing import Generator as TGenerator, Tuple, List, Callable
 from pathlib import Path
@@ -24,9 +23,6 @@ from torchtext.vocab import build_vocab_from_iterator
 import torchtext.datasets as datasets
 from torch.utils.data.distributed import DistributedSampler
 
-# import torch.distributed as dist
-# import torch.multiprocessing as mp
-# from torch.nn.parallel import DistributedDataParallel as DDP
 import torchinfo
 
 import pandas as pd
@@ -222,7 +218,7 @@ class EncoderDecoder(nn.Module):
                autoregressively by depriving it of information on future output
                tokens
             2) padding token masking to ensure that padding tokens are not
-               learnt'
+               learnt
             3) other masking to perform custom training to attend to specific
                tokens for domain oriented tasks
         """
@@ -332,11 +328,9 @@ def attention(query, key, value, mask=None, dropout=None):
         * mask:
         * dropout: if any
     """
-    # global log
     # Get the dimensionality d_head
     d_k = query.size(-1)
     k_t = key.transpose(-2, -1)
-
     log.info(
         f"In attn: d_k={d_k} q={query.size()} k={key.size()} k_t=k.transpose(-2,-1)={k_t.size()}"
     )
@@ -1479,6 +1473,8 @@ def yield_tokens(data_iter, tokenizer, index):
         yield tokenizer(from_to_tuple[index])
 
 
+# NOTE: unused func, leaving for data io reference. This is from the original
+# paper implementation.
 def build_vocabulary(spacy_de, spacy_en):
     def tokenize_de(text):
         return tokenize(text, spacy_de)
@@ -1537,15 +1533,18 @@ def build_en_vocabulary(
     return vocab
 
 
-def load_vocab(spacy_de, spacy_en):
-    if not Path("vocab.pt").exists():
-        vocab_src, vocab_tgt = build_vocabulary(spacy_de, spacy_en)
-        torch.save((vocab_src, vocab_tgt), "vocab.pt")
-    else:
-        vocab_src, vocab_tgt = torch.load("vocab.pt")
-    log.info(f"Finished.\nVocabulary sizes: src={len(vocab_src)} tgt={len(vocab_tgt)}")
-
-    return vocab_src, vocab_tgt
+# FUTURE: delete me. Leaving for reference as this vocabulary-building was part
+# of the original paper code.
+#
+# def load_vocab(spacy_de, spacy_en):
+#     if not Path("vocab.pt").exists():
+#         vocab_src, vocab_tgt = build_vocabulary(spacy_de, spacy_en)
+#         torch.save((vocab_src, vocab_tgt), "vocab.pt")
+#     else:
+#         vocab_src, vocab_tgt = torch.load("vocab.pt")
+#     log.info(f"Finished.\nVocabulary sizes: src={len(vocab_src)} tgt={len(vocab_tgt)}")
+#
+#     return vocab_src, vocab_tgt
 
 
 def load_vocab(vocab_path: Path) -> Vocab:
@@ -2011,22 +2010,22 @@ def my_train_worker(
         )
 
     if is_main_process:
-        file_path = "%s_final.pt" % config.file_prefix
-        torch.save(module.state_dict(), file_path)
+        torch.save(module.state_dict(), f"{config.file_prefix}_final.pt")
 
     print(f"{num_epochs} epochs completed")
+
     return model
 
 
 def my_load_trained_model(
-    vocab_src: Vocab, vocab_tgt: Vocab, config: TransformerConfig
+    src_vocab_size: int, tgt_vocab_size: int, config: TransformerConfig
 ):
     if not Path(config.model_path).exists():
         raise Exception(f"Model path not found: {config.model_path}")
 
     model = make_model(
-        len(vocab_src),
-        len(vocab_tgt),
+        src_vocab_size,
+        tgt_vocab_size,
         N=config.num_layers,
         d_model=config.d_model,
         d_ff=config.d_ff,
@@ -2073,7 +2072,6 @@ def check_outputs(
         log.info(
             "Target Text (Ground Truth) : " + " ".join(tgt_tokens).replace("\n", "")
         )
-        print("foo")
         # ys = greedy_decode(
         #     model,
         #     rb.src,
