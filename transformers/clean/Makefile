@@ -11,6 +11,13 @@ CONFIG_PATH?=./deployment/default_config.jsonc
 LOG_LEVEL?=WARNING
 
 
+.PHONY: clean
+clean:
+	rm -rf .venv
+# Also blow away the temporary test model
+	rm -rf ./models/huck_test
+
+
 # Rebuilds the venv. Currently the only known working combination is torch=2.3,
 # which is required by torchtext=0.18, since torchtext is no longer supported
 # and only supports torch 2.3.
@@ -83,18 +90,16 @@ check-outputs:
 		python check_outputs_driver.py -c $(CONFIG_PATH)
 
 
+.PHONY: unit-tests
+unit-tests:
+	source .venv/bin/activate && \
+		python -m pytest .
+
+
 .PHONY: fmt
 fmt:
 	source .venv/bin/activate && \
 		black .
-
-
-.PHONY: clean
-clean:
-	rm -rf .venv
-# Also blow away the temporary test model
-	rm -rf ./models/huck_test
-
 
 
 ###############################################################################

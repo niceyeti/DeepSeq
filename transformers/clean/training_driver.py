@@ -21,7 +21,7 @@ import torch
 import matplotlib.pyplot as plt
 
 import architecture
-from architecture import EpochMetrics, EncoderDecoder
+from architecture import EpochMetrics, EncoderDecoderModel
 from model_config import TransformerConfig
 
 
@@ -101,7 +101,7 @@ Beginning training with {args.config} config:
     # zero the existing loss file
     loss_path.write_text("", encoding="utf8", newline="")
 
-    def persist_epoch(metrics: EpochMetrics, model: EncoderDecoder):
+    def persist_epoch(metrics: EpochMetrics, model: EncoderDecoderModel):
         """persist_epoch saves the metrics for the epoch to file so that once
         training is completed, they can be read and plotted. It also tracks the
         best validation error and saves the model weights, so this is the

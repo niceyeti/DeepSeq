@@ -178,7 +178,7 @@ class DecoderLayer(nn.Module):
         return self.sublayer[2](x, self.feed_forward)
 
 
-class EncoderDecoder(nn.Module):
+class EncoderDecoderModel(nn.Module):
     """
     A standard Encoder-Decoder architecture. Base for this and many other
     models.
@@ -192,7 +192,7 @@ class EncoderDecoder(nn.Module):
         tgt_embed: nn.Sequential,
         generator: Generator,
     ):
-        super(EncoderDecoder, self).__init__()
+        super(EncoderDecoderModel, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.src_embed = src_embed
@@ -257,6 +257,69 @@ class EncoderDecoder(nn.Module):
         )
 
         return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
+
+
+class EncoderModel(nn.Module):
+    """
+    TODO: this class is a work in progress and is untested.
+
+    TODO: cmd line support for encoder-only training, i.e. with '--encoder-only' or other flag.
+    See the top-level TODO tasking, as the spec for this was recorded.
+
+    A standard Encoder-only architecture. This simply removes the Decoder from
+    EncoderDecoder.
+    """
+
+    def __init__(
+        self,
+        encoder: Encoder,
+        src_embed: nn.Sequential,
+        generator: Generator,
+    ):
+        super(EncoderModel, self).__init__()
+        self.encoder = encoder
+        self.src_embed = src_embed
+        self.generator = generator
+
+    def forward(self, src, src_mask):
+        """Process masked src and target sequences. The input is fully encoded
+        before being processed by the decoder.
+
+        @src: b x max_padding  (LongTensor)
+        @src_mask: b x 1 x (max_padding-1)  (BoolTensor)
+
+        The input @src is simply an integer lookup; the Embedding layer is used
+        to lookup each of these vectors from the model. I don't know why the
+        masks are max_padding-1, but presumably because there is always at least
+        one word.
+
+        Per masking, there are basically three cases which should be detailed
+        separately where used in the code:
+            1) causal masking to ensure the decoder learns to function
+               autoregressively by depriving it of information on future output
+               tokens
+            2) padding token masking to ensure that padding tokens are not
+               learnt
+            3) other masking to perform custom training to attend to specific
+               tokens for domain oriented tasks
+        """
+        # global log
+        log.info(f"encdec src: {src.size()}  {src.type()}")
+        log.info(f"encdec src_mask: {src_mask.size()}  {src_mask.type()}")
+
+        return self.encode(src, src_mask)
+
+    def encode(self, src, src_mask):
+        """encode runs the encoder layers and gets their final output.
+
+        @src:
+        @src_mask:
+        """
+        # global log
+        log.info(
+            f"enc-nly encoder layer: src.size()={src.size()} src_mask.size()={src_mask.size()}"
+        )
+        return self.encoder(self.src_embed(src), src_mask)
 
 
 def subsequent_mask(size):
@@ -391,7 +454,7 @@ class MultiHeadedAttention(nn.Module):
         super(MultiHeadedAttention, self).__init__()
         assert (
             d_model % h == 0
-        ), "d_model % h must equal 0; h must divide d_model but got: h={h} d_model={d_model}"
+        ), f"d_model % h must equal 0; h must divide d_model but got: h={h} d_model={d_model}"
         # We assume d_v always equals d_k
         self.d_k = d_model // h
         self.h = h
@@ -646,7 +709,7 @@ def make_model(
     # FF network layer maps d_model -> d_ff hidden layer -> d_model.
     ff = PositionwiseFeedForward(d_model, d_ff, dropout)
     position = PositionalEncoding(d_model, dropout)
-    model = EncoderDecoder(
+    model = EncoderDecoderModel(
         encoder=Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
         decoder=Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
         # Sequential: modules are added to it in the order passed in the
@@ -672,6 +735,44 @@ def make_model(
     return model
 
 
+def make_encoder_model(
+    src_vocab_size: int,
+    N: int = 6,
+    d_model: int = 512,
+    d_ff: int = 2048,
+    h: int = 8,
+    dropout: int = 0.1,
+):
+    "Helper: Construct a model from hyperparameters."
+    c = copy.deepcopy
+    attn = MultiHeadedAttention(h, d_model)
+    # FF network layer maps d_model -> d_ff hidden layer -> d_model.
+    ff = PositionwiseFeedForward(d_model, d_ff, dropout)
+    position = PositionalEncoding(d_model, dropout)
+    model = EncoderModel(
+        encoder=Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
+        # Sequential: modules are added to it in the order passed in the
+        # constructor. The ``forward()`` method of ``Sequential`` accepts any
+        # input and forwards it to the first module it contains. It then
+        # "chains" outputs to inputs sequentially for each subsequent module,
+        # finally returning the output of the last module.
+        src_embed=nn.Sequential(Embeddings(d_model, src_vocab_size), c(position)),
+        generator=Generator(d_model, src_vocab_size),
+    )
+
+    # This was important from their code. Initialize parameters with Glorot /
+    # fan_avg.
+    for p in model.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)
+
+    # Not really the place to do this, but currently the most central place
+    # to display model characteristics.
+    torchinfo.summary(model)
+
+    return model
+
+
 def inference_test():
     test_model = make_model(11, 11, 2)
     test_model.eval()
@@ -681,7 +782,7 @@ def inference_test():
     memory = test_model.encode(src, src_mask)
     ys = torch.zeros(1, 1).type_as(src)
 
-    for i in range(9):
+    for _ in range(9):
         out = test_model.decode(
             memory, src_mask, ys, subsequent_mask(ys.size(1)).type_as(src.data)
         )
@@ -694,6 +795,29 @@ def inference_test():
 
     # global log
     log.info("Example Untrained Model Prediction:", ys)
+    return ys
+
+
+def encoder_inference_test():
+    test_model = make_encoder_model(11, 2)
+    test_model.eval()
+    src = torch.LongTensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]])
+    src_mask = torch.ones(1, 1, 10)
+
+    memory = test_model.encode(src, src_mask)
+    ys = torch.zeros(1, 1).type_as(src)
+
+    for _ in range(9):
+        prob = test_model.generator(memory[:, -1])
+        _, next_word = torch.max(prob, dim=1)
+        next_word = next_word.data[0]
+        ys = torch.cat(
+            [ys, torch.empty(1, 1).type_as(src.data).fill_(next_word)], dim=1
+        )
+
+    # global log
+    log.info("Example Untrained Model Prediction:", ys)
+    return ys
 
 
 def run_tests():
@@ -982,7 +1106,7 @@ class SimpleLossCompute:
         return sloss.data * norm, sloss
 
 
-def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
+def greedy_decode(model: EncoderDecoderModel, src, src_mask, max_len, start_symbol):
     """greedy_decode encodes the entire input sequence and then repeatedly samples
     the argmax term at each time step from the decoder. For the purposes of
     language prediction within a single language, this is effectively a
@@ -1031,7 +1155,7 @@ def greedy_decode(model: EncoderDecoder, src, src_mask, max_len, start_symbol):
 
 
 def beam_decode(
-    model: EncoderDecoder, src, src_mask, max_len, start_symbol, beam_length
+    model: EncoderDecoderModel, src, src_mask, max_len, start_symbol, beam_length
 ) -> List[torch.Tensor]:
     """beam_decode is the same as greedy_decode except that we sample the top
     @beam_length outputs as @ys. That is, (1) encode the entire provided input
@@ -1196,7 +1320,13 @@ def beam_decode(
 
 
 def hybrid_beam_dfs_decode(
-    model: EncoderDecoder, src, src_mask, max_len, start_symbol, beam_length, max_depth
+    model: EncoderDecoderModel,
+    src,
+    src_mask,
+    max_len,
+    start_symbol,
+    beam_length,
+    max_depth,
 ) -> List[torch.Tensor]:
     """
     NOTE: this is interesting but may not be worth the time, as bidirectionality
@@ -1924,8 +2054,8 @@ def my_train_worker(
     vocab: Vocab,
     spacy_en: Language,
     config: TransformerConfig,
-    report_epoch: Callable[[EpochMetrics, EncoderDecoder], None] = lambda _: None,
-) -> EncoderDecoder:
+    report_epoch: Callable[[EpochMetrics, EncoderDecoderModel], None] = lambda _: None,
+) -> EncoderDecoderModel:
     """my_train_worker was adapted from train_worker for training on
     straightforward language prediction: given sequences, encode/decode them in
     training, and at generation time generate one token at a time. Training and

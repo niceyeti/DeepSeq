@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
-logger = logging.getLogger()
+log = logging.getLogger()
 
 # Ignore file naming, this module may contain multiple configs in the future,
 # i.e. for Encoder-only architectures and other variants.
@@ -89,7 +89,7 @@ class TransformerConfig(BaseModel):
                 # own type rules for converting the string env var value,
                 # passing this directly to the constructor for the type.
                 new_val = os.environ[env_var_name]
-                logger.warning(
+                log.warning(
                     "%s overriding config.%s from %s to %s",
                     env_var_name,
                     key,
