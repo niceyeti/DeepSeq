@@ -24,14 +24,12 @@ import torchtext.datasets as datasets
 from torch.utils.data.distributed import DistributedSampler
 
 import torchinfo
-
 import pandas as pd
 import altair as alt
 import spacy
 from spacy import Language
 
-from model_config import TransformerConfig
-
+from transformer_config import TransformerConfig
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
 log = logging.getLogger()
@@ -88,7 +86,10 @@ class Encoder(nn.Module):
 
 
 class LayerNorm(nn.Module):
-    """Construct a layernorm module (See citation for details)."""
+    """LayerNorm norms its input by centering the mean of its input and dividing
+    by the st-dev, then wrapping this in learnable weights and biases as its
+    output.
+    """
 
     def __init__(self, features, eps=1e-6):
         super(LayerNorm, self).__init__()
@@ -103,8 +104,15 @@ class LayerNorm(nn.Module):
 
 
 class SublayerConnection(nn.Module):
-    """Normalizes output, runs it through a dropout layer, and adds input. For
-    code simplicity the norm is first as opposed to last. Eq: x + dropout(sublayer(norm(x))
+    """Normalizes input, runs it through the sublayer, then dropout, then and adds
+    input. For code simplicity the norm is first as opposed to last. Eq: x +
+    dropout(sublayer(norm(x)). Recall that Dropout randomly zeroes components of
+    its input with probability p, as a regularization technique to discourage
+    neurons from co-adaptations on training data.
+
+    NOTE: Dropout and similar techniques are training-time constructs, and will
+    negatively impact performance at prod-time. Ensure they are shut off by
+    calling model.eval() and `with torch.no_grad()` before inferencing!
     """
 
     def __init__(self, size, dropout):
@@ -233,8 +241,8 @@ class EncoderDecoderModel(nn.Module):
     def encode(self, src, src_mask):
         """encode runs the encoder layers and gets their final output.
 
-        @src:
-        @src_mask:
+        @src: b x max_padding  (LongTensor)
+        @src_mask: b x 1 x (max_padding-1)  (BoolTensor)
         """
         # global log
         log.info(
@@ -257,6 +265,14 @@ class EncoderDecoderModel(nn.Module):
         )
 
         return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
+
+    def ensure_inference_mode(self):
+        if self.training:
+            log.warning(
+                "Model.training true in beam_decode. This is generally incorrect, "
+                + "as you should call model.eval() and 'with torch.no_grad()` "
+                + "before inferencing."
+            )
 
 
 class EncoderModel(nn.Module):
@@ -320,6 +336,14 @@ class EncoderModel(nn.Module):
             f"enc-nly encoder layer: src.size()={src.size()} src_mask.size()={src_mask.size()}"
         )
         return self.encoder(self.src_embed(src), src_mask)
+
+    def ensure_inference_mode(self):
+        if self.training:
+            log.warning(
+                "Model.training true in beam_decode. This is generally incorrect, "
+                + "as you should call model.eval() and 'with torch.no_grad()` "
+                + "before inferencing."
+            )
 
 
 def subsequent_mask(size):
@@ -1114,6 +1138,9 @@ def greedy_decode(model: EncoderDecoderModel, src, src_mask, max_len, start_symb
     it, and then running the decoder one word at a time to create the same
     sequence. This is roughly similar to summarization, though the exact target
     output is the original sentence.
+
+    NOTE: make sure you call model.eval() before calling this to ensure layers
+    like Dropout are disabled!
     """
 
     # global log
@@ -1193,6 +1220,8 @@ def beam_decode(
         # The accumulated probability for this sequence.
         prob: float
 
+    model.ensure_inference_mode()
+
     # global log
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
@@ -1262,7 +1291,7 @@ def beam_decode(
             # term's likelihood. The sorted=False is because the beam is sorted later.
             #
             # probs is dim and next_word_indices is ____.
-            (probs, next_word_indices) = torch.topk(
+            probs, next_word_indices = torch.topk(
                 prob, k=beam_length, dim=1, sorted=False
             )
             log.info(
@@ -1441,7 +1470,7 @@ def hybrid_beam_dfs_decode(
             # term's likelihood. The sorted=False is because the beam is sorted later.
             #
             # probs is dim and next_word_indices is ____.
-            (probs, next_word_indices) = torch.topk(
+            probs, next_word_indices = torch.topk(
                 prob, k=beam_length, dim=1, sorted=False
             )
             log.info(
@@ -2150,6 +2179,12 @@ def my_train_worker(
 def my_load_trained_model(
     src_vocab_size: int, tgt_vocab_size: int, config: TransformerConfig
 ):
+    """load_trained_model creates a model and loads its trained weights from file
+    using load_state_dict. IMPORTANT: if the model is being loaded in order to
+    perform inference or other production time tasks, ensure that you call
+    model.eval() and 'with torch.no_grad()' to disable training-time Dropout and
+    detach gradients.
+    """
     if not Path(config.model_path).exists():
         raise Exception(f"Model path not found: {config.model_path}")
 
@@ -2163,6 +2198,12 @@ def my_load_trained_model(
         dropout=config.dropout,
     )
     model.load_state_dict(torch.load(config.model_path))
+
+    log.info(
+        "Model loaded from %s. Make sure you call model.eval() and 'with "
+        + "torch.no_grad()'.",
+        config.model_path,
+    )
 
     return model
 
@@ -2182,6 +2223,7 @@ def check_outputs(
     pad_idx=2,
     eos_string="</s>",
     max_len=72,
+    beam_len=1,
 ):
     global log
     results = [()] * n_examples
@@ -2209,7 +2251,6 @@ def check_outputs(
         #     max_len,
         #     vocab_src["<s>"],
         # )
-        beam_len = int(os.environ.get("BEAM_LENGTH", "1"))
         ys = beam_decode(
             model, rb.src, rb.src_mask, max_len, vocab_src["<s>"], beam_length=beam_len
         )

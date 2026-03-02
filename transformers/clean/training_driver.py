@@ -22,8 +22,7 @@ import matplotlib.pyplot as plt
 
 import architecture
 from architecture import EpochMetrics, EncoderDecoderModel
-from model_config import TransformerConfig
-
+from transformer_config import TransformerConfig
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
 log = logging.getLogger()

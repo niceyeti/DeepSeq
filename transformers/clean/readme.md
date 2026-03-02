@@ -13,7 +13,7 @@ TODO: top-levels I would like to support:
 1) `-in` and `-out` command line parameters to point to preprocessed line-based
    files for translation from in -> out
 2) DONE: if `-in` only, then use `-in` for both input and output
-3) Add an encoder-only architecture to be used only with `-in`
+3) Add an encoder-only architecture to be used only with `-in`: `-in input.txt --encoder-only`
 4) tests for each of these; small trained models will suffice
 5) resumable training (this is much further ahead)
 6) if needed, for translation it might be nice to devise a small language
@@ -22,7 +22,14 @@ TODO: top-levels I would like to support:
   mechanics could be added using a markov model or simple parse tree, depending
   on the test goal: (1) prove transformer learns simple dictionary (2) get it to
   learn more semantic structure (3) by whatever means show how these structures
-  are learned
+  are learned. Note that dictionary learning of this kind if essentially identical
+  to training a transformer on its own input as output for some small language
+  set, even a few simple phrases perhaps.
+7) information-retrieval based training metrics: consider including task-oriented
+   metrics of enoding by checking how highly the network ranks a target phrase
+   as a vector: encode input into context; compare the encoding's vector with every
+   other encoded input in the training/validation dataset; plot the increase
+   in ranking as training occurs. Recall this was used with words for word2vec training.
 
 ```bash
 # Symmetrical language learning

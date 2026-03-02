@@ -6,7 +6,6 @@ from pathlib import Path
 
 from pydantic import BaseModel
 
-
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
 log = logging.getLogger()
 
@@ -28,6 +27,11 @@ class TransformerConfig(BaseModel):
     vocabulary already exist and must be specified to be loaded in. For now, the
     idea is that the behavioral differences can be settled by simply splitting
     the drivers for training and inference/prod.
+
+    FUTURE: config patterns need lots of refactoring, and this code is far from
+    professional/production grade. One concern is that there seem to be separate
+    config params for training vs. inference/prod. Would like to clean this up
+    and use pydantic.Field properly.
     """
 
     # The batch size for training
@@ -69,6 +73,9 @@ class TransformerConfig(BaseModel):
     # Device must be either "cpu" or "gpu", and is passed directly to torch.
     # See torch docs.
     device: str = "cpu"
+    # beam_length is a production/inference time parameter for a specific operation
+    # after training. TODO: as a production parameter, this may not belong here.
+    beam_length: int = int(os.environ.get("BEAM_LENGTH", default="1"))
 
     def read_from_env(self) -> TransformerConfig:
         """read_from_env can be called to override any config field from env vars,

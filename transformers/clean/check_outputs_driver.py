@@ -10,8 +10,7 @@ import argparse
 import torch
 
 import architecture
-from model_config import TransformerConfig
-
+from transformer_config import TransformerConfig
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
 log = logging.getLogger()
@@ -60,7 +59,7 @@ Beginning check-outputs with {args.config} config:
     vocab = architecture.load_vocab(vocab_path)
 
     device = torch.device(config.device)
-    train_dataloader, valid_dataloader = architecture.create_seq_dataloaders(
+    training_dataloader, validation_dataloader = architecture.create_seq_dataloaders(
         config.data_path,
         device,
         vocab,
@@ -80,15 +79,20 @@ Beginning check-outputs with {args.config} config:
     )
     log.info(f"Model loaded from {config.model_path}")
 
-    architecture.check_outputs(
-        train_dataloader,
-        trained_model,
-        vocab,
-        vocab,
-        n_examples=7,
-        pad_idx=vocab["<blank>"],
-        eos_string="</s>",
-    )
+    # Configure the model for prod-time / non-training mode.
+    trained_model.eval()
+
+    with torch.no_grad():
+        architecture.check_outputs(
+            training_dataloader,
+            trained_model,
+            vocab,
+            vocab,
+            n_examples=7,
+            pad_idx=vocab["<blank>"],
+            eos_string="</s>",
+            beam_len=config.beam_length,
+        )
 
 
 if __name__ == "__main__":

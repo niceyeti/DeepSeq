@@ -15,7 +15,6 @@ import os
 from pathlib import Path
 from typing import Iterator, Callable
 
-
 ENV_FB_DATA_PATH = "FB_DATA_PATH"
 
 
