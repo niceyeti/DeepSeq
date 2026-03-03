@@ -53,7 +53,7 @@ class DummyScheduler:
 
 
 class Generator(nn.Module):
-    "Define standard linear + softmax generation step."
+    "Generator defines a standard linear + softmax generation step."
 
     def __init__(self, d_model: int, vocab):
         super(Generator, self).__init__()
@@ -139,9 +139,11 @@ class EncoderLayer(nn.Module):
         "Follow Figure 1 (left) for connections."
         # global log
         log.info(f"EncoderLayer forward:  x dim {x.size()}  mask dim {mask.size()}")
+        # Encode the input through attention function, then adding/norming
+        # through sublayer.
         x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
         log.info(f"encoder x dim: {x.size()}")
-
+        # Run the encoded output through feed-forward layer for final output.
         x_final = self.sublayer[1](x, self.feed_forward)
         log.info(f"Encoder x_final dim: {x_final.size()}")
 
@@ -159,6 +161,27 @@ class Decoder(nn.Module):
     def forward(self, x, memory, src_mask, tgt_mask):
         for layer in self.layers:
             x = layer(x, memory, src_mask, tgt_mask)
+        return self.norm(x)
+
+
+class DecoderOnly(nn.Module):
+    """DecoderOnly is just the counterpart to Decoder, for mnemonic-sake.
+    A block of plain decoders without an encoder (aka "memory") input or
+    src-mask only takes the x input and target mask.
+
+    TODO: rename "DecoderOnly*" classes once these factor out well. These were
+    named simply to distinguish them from the original Decoder classes built for
+    the encoder-decoder model, but these need less-weird names.
+    """
+
+    def __init__(self, layer, N):
+        super(DecoderOnly, self).__init__()
+        self.layers = clones(layer, N)
+        self.norm = LayerNorm(layer.size)
+
+    def forward(self, x, tgt_mask):
+        for layer in self.layers:
+            x = layer(x, tgt_mask)
         return self.norm(x)
 
 
@@ -180,16 +203,111 @@ class DecoderLayer(nn.Module):
         """The decoder always takes as input output target and memory from the
         encoder's final output. It then runs self-attention before running
         self+src attention."""
-        m = memory
+        # Encode the target using self-attention and masking to prevent
+        # look-ahead, before adding/norming this to the initial target input via
+        # the sublayer.
         x = self.sublayer[0](target, lambda x: self.self_attn(x, x, x, tgt_mask))
-        x = self.sublayer[1](x, lambda x: self.src_attn(x, m, m, src_mask))
+        # Encoder the target again, this time taking the encoded input as the
+        # query vector by which to learn translation features tgt*input, then
+        # again adding/norming this to the initial layer input.
+        x = self.sublayer[1](x, lambda x: self.src_attn(x, memory, memory, src_mask))
+        # Finally, run the encoded input through a feed forward network.
         return self.sublayer[2](x, self.feed_forward)
 
 
-class EncoderDecoderModel(nn.Module):
+class DecoderOnlyLayer(nn.Module):
+    """DecoderOnlyLayer is identical to DecoderLayer but omits the src-mask and
+    encoder input. This layer definition is solely for decoder-only models, and
+    cannot be used for encoder-decoder models from the original paper. This
+    decoder has only self-attention and no src-attention.
     """
-    A standard Encoder-Decoder architecture. Base for this and many other
-    models.
+
+    def __init__(self, size, self_attn, feed_forward, dropout):
+        super(DecoderOnlyLayer, self).__init__()
+        self.self_attn = self_attn
+        self.feed_forward = feed_forward
+        # There are 2 fully connected sublayers in the decoder-only layer: after
+        # self-attention, and finally after decoder output.
+        self.sublayer = clones(SublayerConnection(size, dropout), 2)
+
+    def forward(self, target, tgt_mask):
+        """The decoder runs self-attention only."""
+        # Run target input through self-attention, with target mask to prevent
+        # look-ahead, before passing this along to the sublayer to add/norm the
+        # attention output to the initial target input.
+        x = self.sublayer[0](target, lambda x: self.self_attn(x, x, x, tgt_mask))
+        # Finally, run the encoded target through the feed forward layer before
+        # adding/norming a final time through the sublayer.
+        return self.sublayer[1](x, self.feed_forward)
+
+
+# NOTE: under construction. I need to revisit this later, as I've kludged the connections
+# between decoder layers, particularly need to correct the 'memory' portion. Refer to
+# the EncoderDecoderModel's usage of 'memory', I have made some simply mistakes here but
+# need to diagram the architecture to fix this up correctly.
+class DecoderModel(nn.Module):
+    """DecoderModel is a complete decoder-only model which gets rid of the encoder
+    used in the original transformer paper. This model takes as input the same
+    input format as the full architecture's encoder model; it then applies
+    multiple self-attention layers, but note that this omits the src-attention
+    by which the original full-architecture decoder takes the encoder's output.
+    Thereafter the only distinction from an encoder-only architecture is that a
+    decoder masks input such that it operates auto-regressively and cannot peek
+    ahead.
+    """
+
+    def __init__(
+        self,
+        decoder: DecoderOnly,
+        tgt_embed: nn.Sequential,
+        generator: Generator,
+    ):
+        super(DecoderModel, self).__init__()
+        self.decoder = decoder
+        self.tgt_embed = tgt_embed
+        self.generator = generator
+
+    def forward(self, tgt, tgt_mask):
+        """Process masked target sequences. Note how this takes no encoder
+        input, but takes the tgt_mask to ensure that training is
+        auto-regressive.
+
+        @tgt: b x max_padding  (LongTensor)
+        @tgt_mask: b x (max_padding-1) x 1 (BoolTensor)
+
+        The input @tgt is simply an integer lookup; the Embedding layer is used
+        to lookup each of these vectors from the model. I don't know why the
+        masks are max_padding-1, but presumably because there is always at least
+        one word.
+
+        Per masking, there are basically three cases which should be detailed
+        separately where used in the code:
+            1) causal masking to ensure the decoder learns to function
+               autoregressively by depriving it of information on future output
+               tokens
+            2) padding token masking to ensure that padding tokens are not
+               learnt
+            3) other masking to perform custom training to attend to specific
+               tokens for domain oriented tasks
+        """
+        log.info(f"dec tgt: {tgt.size()}  {tgt.type()}")
+        log.info(f"dec tgt_mask: {tgt_mask.size()}  {tgt_mask.type()}")
+
+        tgt_embed = self.tgt_embed(tgt)
+        return self.decoder(tgt_embed, tgt_mask)
+
+    def ensure_inference_mode(self):
+        if self.training:
+            log.warning(
+                "Model.training true in beam_decode. This is generally incorrect, "
+                + "as you should call model.eval() and 'with torch.no_grad()` "
+                + "before inferencing."
+            )
+
+
+class EncoderDecoderModel(nn.Module):
+    """A standard Encoder-Decoder architecture for translation tasks, also referred
+    to as a sequence-to-sequence transformer in Bishop's Deep Learning.
     """
 
     def __init__(
@@ -283,7 +401,9 @@ class EncoderModel(nn.Module):
     See the top-level TODO tasking, as the spec for this was recorded.
 
     A standard Encoder-only architecture. This simply removes the Decoder from
-    EncoderDecoder.
+    EncoderDecoder. Encoders train without a look-ahead mask such that the learned
+    representations attend to all other information in the sequence, forward or
+    backward.
     """
 
     def __init__(
@@ -744,6 +864,47 @@ def make_model(
         src_embed=nn.Sequential(Embeddings(d_model, src_vocab_size), c(position)),
         tgt_embed=nn.Sequential(Embeddings(d_model, tgt_vocab_size), c(position)),
         generator=Generator(d_model, tgt_vocab_size),
+    )
+
+    # This was important from their code. Initialize parameters with Glorot /
+    # fan_avg.
+    for p in model.parameters():
+        if p.dim() > 1:
+            nn.init.xavier_uniform_(p)
+
+    # Not really the place to do this, but currently the most central place
+    # to display model characteristics.
+    torchinfo.summary(model)
+
+    return model
+
+
+def make_decoder_model(
+    src_vocab_size: int,
+    N: int = 6,
+    d_model: int = 512,
+    d_ff: int = 2048,
+    h: int = 8,
+    dropout: int = 0.1,
+):
+    """TODO: decoder-only model is under construction and untested. This is
+    how gpt-style model work I'm told, but really this is more sensible for
+    in-language training/prediction tasks, vs. the translation task for which
+    encoder-decoder models are intended."""
+    c = copy.deepcopy
+    attn = MultiHeadedAttention(h, d_model)
+    # FF network layer maps d_model -> d_ff hidden layer -> d_model.
+    ff = PositionwiseFeedForward(d_model, d_ff, dropout)
+    position = PositionalEncoding(d_model, dropout)
+    model = DecoderModel(
+        decoder=Decoder(DecoderOnlyLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
+        # Sequential: modules are added to it in the order passed in the
+        # constructor. The ``forward()`` method of ``Sequential`` accepts any
+        # input and forwards it to the first module it contains. It then
+        # "chains" outputs to inputs sequentially for each subsequent module,
+        # finally returning the output of the last module.
+        src_embed=nn.Sequential(Embeddings(d_model, src_vocab_size), c(position)),
+        generator=Generator(d_model, src_vocab_size),
     )
 
     # This was important from their code. Initialize parameters with Glorot /

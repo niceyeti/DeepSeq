@@ -13,7 +13,7 @@ TODO: top-levels I would like to support:
 1) `-in` and `-out` command line parameters to point to preprocessed line-based
    files for translation from in -> out
 2) DONE: if `-in` only, then use `-in` for both input and output
-3) Add an encoder-only architecture to be used only with `-in`: `-in input.txt --encoder-only`
+3) Partially complete: add an encoder-only and decoder-only architecture to be used only with `-in`: `-in input.txt --encoder-only` and `--decoder-only`
 4) tests for each of these; small trained models will suffice
 5) resumable training (this is much further ahead)
 6) if needed, for translation it might be nice to devise a small language
