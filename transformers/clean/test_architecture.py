@@ -13,3 +13,7 @@ class TestArchitecture(TestCase):
     def test_encoder_inference(self):
         ys = architecture.encoder_inference_test()
         self.assertTrue(ys is not None, "Inference check passes if no errors raised")
+
+    def test_decoder_inference(self):
+        ys = architecture.decoder_inference_test()
+        self.assertTrue(ys is not None, "Inference check passes if no errors raised")

@@ -224,6 +224,7 @@ class DecoderOnlyLayer(nn.Module):
 
     def __init__(self, size, self_attn, feed_forward, dropout):
         super(DecoderOnlyLayer, self).__init__()
+        self.size = size
         self.self_attn = self_attn
         self.feed_forward = feed_forward
         # There are 2 fully connected sublayers in the decoder-only layer: after
@@ -293,8 +294,21 @@ class DecoderModel(nn.Module):
         log.info(f"dec tgt: {tgt.size()}  {tgt.type()}")
         log.info(f"dec tgt_mask: {tgt_mask.size()}  {tgt_mask.type()}")
 
-        tgt_embed = self.tgt_embed(tgt)
-        return self.decoder(tgt_embed, tgt_mask)
+        return self.decode(tgt, tgt_mask)
+
+    def decode(self, tgt, tgt_mask):
+        """decode runs the entire decoder layers.
+
+        @tgt: size varies according to how much previous context (previous words, 'c') is loaded, (1 x c)
+        @tgt_mask: size is coupled to tgt size, and is a triangular matrix whose elements above the diagonal are true.
+          The size per @tgt is (1 x c x c)
+        """
+        # global log
+        log.info(
+            f"decoder-model layer: tgt.size()={tgt.size()} tgt_mask.size()={tgt_mask.size()}"
+        )
+
+        return self.decoder(self.tgt_embed(tgt), tgt_mask)
 
     def ensure_inference_mode(self):
         if self.training:
@@ -467,10 +481,10 @@ class EncoderModel(nn.Module):
 
 
 def subsequent_mask(size):
-    """Returns a tensor of size (1 x @size x @size). Mask out subsequent positions.
-    Output embeddings are offset by one position. This returns an upper
-    triangular matrix of booleans whose diagonal and below-diagonal entries are
-    False."""
+    """Returns a tensor of size (1 x @size x @size) for masking out subsequent
+    positions., thus ensuring the auto-regressive property of decoders. Output
+    embeddings are offset by one position. This returns an upper triangular
+    matrix of booleans whose diagonal and below-diagonal entries are False."""
 
     # Note: the '1' first dim is inferred by torch to be for batch, i.e.
     # torch.ones((1,2,2)) is '[[[1, 1],[0, 1]]]'
@@ -897,13 +911,13 @@ def make_decoder_model(
     ff = PositionwiseFeedForward(d_model, d_ff, dropout)
     position = PositionalEncoding(d_model, dropout)
     model = DecoderModel(
-        decoder=Decoder(DecoderOnlyLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
+        decoder=DecoderOnly(DecoderOnlyLayer(d_model, c(attn), c(ff), dropout), N),
         # Sequential: modules are added to it in the order passed in the
         # constructor. The ``forward()`` method of ``Sequential`` accepts any
         # input and forwards it to the first module it contains. It then
         # "chains" outputs to inputs sequentially for each subsequent module,
         # finally returning the output of the last module.
-        src_embed=nn.Sequential(Embeddings(d_model, src_vocab_size), c(position)),
+        tgt_embed=nn.Sequential(Embeddings(d_model, src_vocab_size), c(position)),
         generator=Generator(d_model, src_vocab_size),
     )
 
@@ -984,7 +998,7 @@ def inference_test():
 
 
 def encoder_inference_test():
-    test_model = make_encoder_model(11, 2)
+    test_model = make_encoder_model(11, 3)
     test_model.eval()
     src = torch.LongTensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]])
     src_mask = torch.ones(1, 1, 10)
@@ -998,6 +1012,28 @@ def encoder_inference_test():
         next_word = next_word.data[0]
         ys = torch.cat(
             [ys, torch.empty(1, 1).type_as(src.data).fill_(next_word)], dim=1
+        )
+
+    # global log
+    log.info("Example Untrained Model Prediction:", ys)
+    return ys
+
+
+def decoder_inference_test():
+    test_model = make_decoder_model(11, 3)
+    test_model.eval()
+    tgt = torch.LongTensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]])
+    tgt_mask = torch.ones(1, 1, 10)
+
+    memory = test_model.decode(tgt, tgt_mask)
+    ys = torch.zeros(1, 1).type_as(tgt)
+
+    for _ in range(9):
+        prob = test_model.generator(memory[:, -1])
+        _, next_word = torch.max(prob, dim=1)
+        next_word = next_word.data[0]
+        ys = torch.cat(
+            [ys, torch.empty(1, 1).type_as(tgt.data).fill_(next_word)], dim=1
         )
 
     # global log
