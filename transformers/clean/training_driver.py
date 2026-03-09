@@ -91,9 +91,10 @@ Beginning training with {args.config} config:
     # TODO: add a max sequence length parameter. The model has a fixed max input
     # size of 512 tokens, and sentences need to be truncated to that length or
     # omitted if too long.
-    train_iter, val_iter = architecture.get_per_line_sentence_iters(config.data_path)
+    train_iter, val_iter = architecture.get_novel_sentence_iters(config.data_path)
 
     vocab = architecture.build_en_vocabulary(train_iter, val_iter, spacy_en)
+
     architecture.save_vocab(vocab, f"{config.file_prefix}.pth")
 
     loss_path = Path(f"{config.file_prefix}.loss")
