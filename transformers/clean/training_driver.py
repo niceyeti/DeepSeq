@@ -91,7 +91,7 @@ Beginning training with {args.config} config:
     # TODO: add a max sequence length parameter. The model has a fixed max input
     # size of 512 tokens, and sentences need to be truncated to that length or
     # omitted if too long.
-    train_iter, val_iter = architecture.get_novel_sentence_iters(config.data_path)
+    train_iter, val_iter = architecture.get_per_line_sentence_iters(config.data_path)
 
     vocab = architecture.build_en_vocabulary(train_iter, val_iter, spacy_en)
     architecture.save_vocab(vocab, f"{config.file_prefix}.pth")
@@ -129,9 +129,7 @@ Beginning training with {args.config} config:
             loss_file.write(metrics.model_dump_json(indent=None) + "\n")
 
     try:
-        architecture.my_train_worker(
-            vocab, spacy_en, config, report_epoch=persist_epoch
-        )
+        architecture.train_worker(vocab, spacy_en, config, report_epoch=persist_epoch)
     finally:
         # Plots losses, even on ctrl+c sigterm.
         plot_losses(loss_path, Path(f"{config.file_prefix}.loss.png"))

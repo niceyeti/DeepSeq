@@ -556,6 +556,9 @@ def attention(query, key, value, mask=None, dropout=None):
         f"In attn: d_k={d_k} q={query.size()} k={key.size()} k_t=k.transpose(-2,-1)={k_t.size()}"
     )
 
+    """
+    
+    """
     scores = torch.matmul(query, k_t) / math.sqrt(d_k)
 
     """
@@ -1864,14 +1867,18 @@ def build_en_vocabulary(
     train_iter: TGenerator[Tuple[str, str], None, None],
     val_iter: TGenerator[Tuple[str, str], None, None],
     spacy_en: Language,
+    min_frequency: int = 2,
 ) -> Vocab:
     """
     Returns a Vocab object for mapping tokens to indices.
 
-    @train_iter: An iterator producing (str,str) tups, where the first item is
-    the input sentence and the second is the target output. @val_iter: The
-    validation iterator, the same type as @train_iter. @spacy_en: The spacy
-    english model.
+    Args:
+        * train_iter: An iterator producing (str,str) tups, where the first item
+          is the input sentence and the second is the target output.
+        * val_iter: The validation iterator, the same type as @train_iter.
+        * spacy_en: The spacy english model.
+        * min_frequency: The minimum term frequency for a token (word) to be
+          included in the vocab.
     """
 
     def tokenize_en(text):
@@ -1880,7 +1887,7 @@ def build_en_vocabulary(
     log.info("Building English Vocabulary ...")
     vocab = build_vocab_from_iterator(
         yield_tokens(itertools.chain(train_iter, val_iter), tokenize_en, index=1),
-        min_freq=2,
+        min_freq=min_frequency,
         specials=["<s>", "</s>", "<blank>", "<unk>"],
     )
 
@@ -1918,13 +1925,15 @@ def save_vocab(vocab: Vocab, vocab_path: Path):
 
 def collate_batch(
     batch,
-    src_pipeline,
-    tgt_pipeline,
-    src_vocab,
-    tgt_vocab,
-    device,
-    max_padding=128,
-    pad_id=2,
+    src_pipeline: Callable[[str], List[str]],
+    tgt_pipeline: Callable[[str], List[str]],
+    src_vocab: Vocab,
+    tgt_vocab: Vocab,
+    device: str,
+    bs_id: int,
+    eos_id: int,
+    pad_id: int,
+    max_padding: int = 128,
 ):
     """
     Batching matters a ton for speed. We want to have very evenly divided
@@ -1933,62 +1942,63 @@ def collate_batch(
     batching to make sure we search over enough sentences to find tight batches.
     """
 
-    bs_id = torch.tensor([0], device=device)  # <s> token id
-    eos_id = torch.tensor([1], device=device)  # </s> token id
-    src_list, tgt_list = [], []
-    for _src, _tgt in batch:
-        processed_src = torch.cat(
+    def to_padded_tensor(token_ids: List[int], tokens: List[str]) -> torch.Tensor:
+        # Plus 2 due to account for bs and eos id.
+        if (len(token_ids) + 2) > max_padding:
+            log.warning(
+                "processed len %d > max_padding of %d (includes bs and eos tokens) in collate_batch for seq %s, truncating training sequence",
+                len(processed),
+                max_padding,
+                tokens,
+            )
+            tokens_ids = token_ids[: (max_padding - 2)]
+        # Minus 2 to account for the bs and eos tokens.
+        num_pads = (max_padding - 2) - len(token_ids)
+
+        # Create the initial sentence tensor consisting of the token ids,
+        # prepended by a begin-token and appended by an end-token.
+        processed = torch.cat(
             [
-                bs_id,
+                bs,
                 torch.tensor(
-                    src_vocab(src_pipeline(_src)),
+                    token_ids,
                     dtype=torch.int64,
                     device=device,
                 ),
-                eos_id,
-            ],
-            0,
-        )
-        processed_tgt = torch.cat(
-            [
-                bs_id,
-                torch.tensor(
-                    tgt_vocab(tgt_pipeline(_tgt)),
-                    dtype=torch.int64,
-                    device=device,
-                ),
-                eos_id,
+                eos,
             ],
             0,
         )
 
-        # global log
-        if max_padding - len(processed_src) < 0:
-            log.warning("Overwrite occurs for negative value of a padding - len")
-        log.info
-        src_list.append(
-            # warning - overwrites values for negative values of padding - len
-            pad(
-                processed_src,
-                (
-                    0,
-                    max_padding - len(processed_src),
-                ),
-                value=pad_id,
-            )
+        # Append padding ids to the remaining length of the tensor.
+        return pad(
+            processed,
+            (
+                0,
+                num_pads,
+            ),
+            mode="constant",
+            value=pad_id,
         )
-        if max_padding - len(processed_tgt) < 0:
-            log.warning("Overwrite occurs for negative value of a padding - len")
-        tgt_list.append(
-            pad(
-                processed_tgt,
-                (0, max_padding - len(processed_tgt)),
-                value=pad_id,
-            )
-        )
+
+    bs = torch.tensor([bs_id], device=device)  # <s> token id
+    eos = torch.tensor([eos_id], device=device)  # </s> token id
+
+    src_list, tgt_list = [], []
+    for _src, _tgt in batch:
+        src_tokens = src_pipeline(_src)
+        src_ids = src_vocab(src_tokens)
+        processed_src = to_padded_tensor(src_ids, src_tokens)
+        src_list.append(processed_src)
+
+        tgt_tokens = tgt_pipeline(_tgt)
+        tgt_ids = tgt_vocab(tgt_tokens)
+        processed_tgt = to_padded_tensor(tgt_ids, tgt_tokens)
+        tgt_list.append(processed_tgt)
 
     src = torch.stack(src_list)
     tgt = torch.stack(tgt_list)
+
     return (src, tgt)
 
 
@@ -2043,8 +2053,10 @@ def create_dataloaders(
             vocab_src,
             vocab_tgt,
             device,
-            max_padding=max_padding,
+            bs_id=1,
+            eos_id=2,
             pad_id=vocab_src.get_stoi()["<blank>"],
+            max_padding=max_padding,
         )
 
     train_iter, valid_iter, test_iter = datasets.Multi30k(language_pair=("de", "en"))
@@ -2151,12 +2163,15 @@ def get_novel_sentence_iters(
 ) -> Tuple[
     TGenerator[Tuple[str, str], None, None], TGenerator[Tuple[str, str], None, None]
 ]:
-    """
-    From fpath, read all lines, splits on any of {!?.:}, preserving these at the
-    end of sequences, and yields each sentence in this manner as a tuple pair.
-    The return type just matches previous requirements, which were for
-    translation tasks where tuple (str,tgt) pairs were each in separate
-    languages.
+    """get_novel_sentence_iters returns a training and validation iterator over the
+    lines found in the passed fpath. Each line is treated as an example. Each
+    iterator iterates the lines as (line,line) pairs, where the first entry is
+    the input and second entry is the target. The lines are shuffled before
+    creating their iterators and will be randomly ordered. From fpath, read all
+    lines, splits on any of {!?.:}, preserving these at the end of sequences,
+    and yields each sentence in this manner as a tuple pair. The return type
+    just matches previous requirements, which were for translation tasks where
+    tuple (str,tgt) pairs were each in separate languages.
 
     The lines are shuffled then split into train and validation/test.
 
@@ -2177,16 +2192,19 @@ def get_novel_sentence_iters(
 
 
 def create_seq_dataloaders(
-    novel_path,
-    device,
-    vocab_src,
-    spacy_en,
-    batch_size=12000,
-    max_padding=128,
-    is_distributed=True,
+    novel_path: str,
+    device: str,
+    vocab_src: Vocab,
+    spacy_en: Language,
+    batch_size: int = 12000,
+    max_padding: int = 128,
+    is_distributed: bool = True,
 ) -> Tuple[DataLoader, DataLoader]:
-    """
-    @novel_path: The path to a novel, such as the gutenberg huckfin utf8 novel,
+    """create_seq_dataloaders returns two date iterators for training and
+    validation, for which the training output is the same as the input, in other
+    words in-language prediction.
+
+    @novel_path: The path to a novel, such as the Gutenberg huckfinn utf8 novel,
     whose sentences can be used as training sequences. The novel should be utf8,
     line based, with sentences delimited by periods. This function chops the
     novel into sentences as training data, where the input sentence is both the
@@ -2203,10 +2221,13 @@ def create_seq_dataloaders(
     # Returns tokenized text. Example:
     # - in:  [token.text for token in  spacy_en.tokenizer("foo Bar")]
     # - out: ['foo', 'Bar']
-    def tokenize_en(text):
+    def tokenize_en(text: str) -> List[str]:
         return [tok.text for tok in spacy_en.tokenizer(text)]
 
     def collate_fn(batch):
+        """Satisfies the torch collate_fn_t interface: 'merges a list of samples
+        to form a mini-batch of Tensor(s).  Used when using batched loading from
+        a map-style dataset.'"""
         return collate_batch(
             batch,
             tokenize_en,
@@ -2214,8 +2235,10 @@ def create_seq_dataloaders(
             vocab_src,
             vocab_src,
             device,
-            max_padding=max_padding,
+            bs_id=1,
+            eos_id=2,
             pad_id=vocab_src.get_stoi()["<blank>"],
+            max_padding=max_padding,
         )
 
     """
@@ -2276,18 +2299,18 @@ class EpochMetrics(BaseModel):
     validation_loss: float
 
 
-def my_train_worker(
+def train_worker(
     vocab: Vocab,
     spacy_en: Language,
     config: TransformerConfig,
     report_epoch: Callable[[EpochMetrics, EncoderDecoderModel], None] = lambda _: None,
 ) -> EncoderDecoderModel:
-    """my_train_worker was adapted from train_worker for training on
-    straightforward language prediction: given sequences, encode/decode them in
-    training, and at generation time generate one token at a time. Training and
-    validation loss are saved per epoch and reported via report_epoch (if
-    passed). No gpu was used here, because my laptop doesn't have one and this
-    is just to develop the code.
+    """train_worker was adapted for training on straightforward language
+    prediction: given sequences, encode/decode them in training, and at
+    generation time generate one token at a time. Training and validation loss
+    are saved per epoch and reported via report_epoch (if passed). No gpu was
+    used here, because my laptop doesn't have one and this is just to develop
+    the code.
 
     Returns: the trained EncoderDecoder.
     """
@@ -2331,7 +2354,7 @@ def my_train_worker(
 
     for epoch in range(num_epochs):
         model.train()
-        log.info(f"CPU Epoch {epoch} Training ====", flush=True)
+        log.info(f"CPU Epoch {epoch} Training ====")
         train_loss, train_state = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in train_dataloader),
             model,
@@ -2346,7 +2369,7 @@ def my_train_worker(
 
         torch.cuda.empty_cache()
 
-        log.info(f"Epoch {epoch} Validation ====", flush=True)
+        log.info(f"Epoch {epoch} Validation ====")
         model.eval()
         validation_loss, _ = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in valid_dataloader),
@@ -2364,6 +2387,7 @@ def my_train_worker(
             ),
             model,
         )
+        exit()
 
     if is_main_process:
         torch.save(module.state_dict(), f"{config.file_prefix}_final.pt")

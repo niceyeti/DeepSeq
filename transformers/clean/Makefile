@@ -51,8 +51,6 @@ train:
 		python training_driver.py -c $(CONFIG_PATH)
 
 
-
-#
 # .PHONY: test-english-to-german
 # test-english-to-german:
 # 	source .venv/bin/activate && \
@@ -74,7 +72,9 @@ train:
 # qualitative check. It may be a bug, or logical/behavioral bug, but a
 # beam-length of 1000 caused the model to output nothing, such that the most
 # likely output is shortened; a beam-length of 25 was closer to natural
-# language.
+# language. This result is consistent with the natural language property that
+# most actual sequences are relatively low probability, whereas high probability
+# sequences are not natural language, such as word loops. 
 #
 # TODO: evaluate beam for bugs. Large BEAM_LENGTH results in less sensible
 # output and ultimately empty output; shorter lengths output more reasonable
