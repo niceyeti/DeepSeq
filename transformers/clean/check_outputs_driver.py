@@ -72,7 +72,7 @@ Beginning check-outputs with {args.config} config:
     # Src and tgt vocab length are the same because I've been training a
     # Transformer on its own input sequences as output, for single language
     # prediction, not for translation.
-    trained_model = architecture.my_load_trained_model(
+    trained_model = architecture.load_trained_model(
         src_vocab_size=len(vocab),
         tgt_vocab_size=len(vocab),
         config=config,

@@ -10,6 +10,8 @@ CONFIG_PATH?=./deployment/default_config.jsonc
 # Use DEBUG to view gritty model outputs, tensor dimensions, etc.
 LOG_LEVEL?=WARNING
 
+BEAM_LENGTH?=30
+
 
 .PHONY: clean
 clean:
@@ -48,6 +50,7 @@ rebuild-venv:
 .PHONY: train
 train:
 	source .venv/bin/activate && \
+		LOG_LEVEL=$(LOG_LEVEL) \
 		python training_driver.py -c $(CONFIG_PATH)
 
 
@@ -85,8 +88,8 @@ train:
 .PHONY: check-outputs
 check-outputs:
 	source .venv/bin/activate && \
-	BEAM_LENGTH=30 \
-	LOG_LEVEL=WARNING \
+	BEAM_LENGTH=$(BEAM_LENGTH) \
+	LOG_LEVEL=$(LOG_LEVEL) \
 		python check_outputs_driver.py -c $(CONFIG_PATH)
 
 

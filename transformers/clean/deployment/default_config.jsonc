@@ -1,15 +1,15 @@
 {
-    // The batch size for training
-    "batch_size": 32,
+    // The batch size for training. Originally 32.
+    "batch_size": 64,
     // Whether or not training is distributed
     "distributed": false,
     // The number of epochs for which to train, as a static value.
-    "num_epochs": 200,
+    "num_epochs": 130,
     // Number of iterations to accumulate weight updates.
     "accum_iter": 10,
     // The number of layers, 6 in the original paper. The encoder and decoder will
     // each have this number of layers.
-    "num_layers": 16,
+    "num_layers": 6,
     // The model dimension, 512 in the original paper.
     "d_model": 512,
     "dropout": 0.1,

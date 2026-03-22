@@ -8,8 +8,21 @@ TODO: I'm explicitly targeting presentation-ness, whose requirements are:
 1/25/26 Top-level status: I created a simple fb_data training lines file, but it
 needs to be preprocessed.
 
+3/15 TODO: the main thing to complete is to clarify and document the tgt, tgt_y
+and std_mask. Each of the tgt are offset by one; I need to confirm the validity
+of these offsets where each is used to implement autoregressive behavior.
+Especially the std_mask. 
+* tgt is passed to the encoder and excludes the last token
+* tgt_y is passed to the decoder and excludes the first token
+* why is each of these the case?
+* is the unsqueeze logic in the attention() method correct and corresponds
+  with each case of mask and tgt vs tgt_y?
+* finally, clean up all of the tensor shape notes
+
+
 
 TODO: top-levels I would like to support:
+0) Make a data-processing module and put all of the text processing in it
 1) `-in` and `-out` command line parameters to point to preprocessed line-based
    files for translation from in -> out
 2) DONE: if `-in` only, then use `-in` for both input and output

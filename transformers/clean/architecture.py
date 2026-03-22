@@ -60,6 +60,14 @@ class Generator(nn.Module):
         self.proj = nn.Linear(d_model, vocab)
 
     def forward(self, x):
+        """forward supports inference at production time, after training. This
+        is called to project the output of the trained model and subsequently
+        run through log-softmax.
+
+        Args:
+            * x: a tensor of size ()
+        """
+
         return log_softmax(self.proj(x), dim=-1)
 
 
@@ -79,6 +87,15 @@ class Encoder(nn.Module):
         self.norm = LayerNorm(layer.size)
 
     def forward(self, x, mask):
+        """forward takes the x input to encode and its mask.
+
+        Args:
+            * x: a tensor of size (b x seq_len x d_model)
+            * mask: a tensor of size (b x 1 x seq_len)
+        """
+
+        log.info(f"Encoder.forward: x={x.size()}   mask={mask.size()}")
+
         "Pass the input (and mask) through each layer in turn."
         for layer in self.layers:
             x = layer(x, mask)
@@ -136,7 +153,12 @@ class EncoderLayer(nn.Module):
         self.size = size
 
     def forward(self, x, mask):
-        "Follow Figure 1 (left) for connections."
+        """Follow Figure 1 (left) for connections.
+
+        Args:
+            * x: tensor of size (b x seq_len x d_model)
+            * mask: tensor of size (b x 1 x seq_len)
+        """
         # global log
         log.info(f"EncoderLayer forward:  x dim {x.size()}  mask dim {mask.size()}")
         # Encode the input through attention function, then adding/norming
@@ -159,6 +181,20 @@ class Decoder(nn.Module):
         self.norm = LayerNorm(layer.size)
 
     def forward(self, x, memory, src_mask, tgt_mask):
+        """forward
+
+        Args:
+            * x: tensor of size (b x (seq_len-1) x d_model)
+            * memory: tensor of size (b x seq_len x d_model) taken from the
+              final encoder output for seq2seq transformer models
+            * src_mask: tensor of size (b x 1 x seq_len)
+            * tgt_mask: tensor of size (b v (seq_len-1) x (seq_len-1))
+        """
+
+        log.info(
+            f"Decoder.forward  x={x.size()}  memory={memory.size()}  src_mask={src_mask.size()} tgt_mask=P{tgt_mask.size()}"
+        )
+
         for layer in self.layers:
             x = layer(x, memory, src_mask, tgt_mask)
         return self.norm(x)
@@ -202,17 +238,21 @@ class DecoderLayer(nn.Module):
     def forward(self, target, memory, src_mask, tgt_mask):
         """The decoder always takes as input output target and memory from the
         encoder's final output. It then runs self-attention before running
-        self+src attention."""
+        tgt-self and src attention."""
         # Encode the target using self-attention and masking to prevent
         # look-ahead, before adding/norming this to the initial target input via
         # the sublayer.
-        x = self.sublayer[0](target, lambda x: self.self_attn(x, x, x, tgt_mask))
+        masked_tgt_attn = self.sublayer[0](
+            target, lambda tgt: self.self_attn(tgt, tgt, tgt, tgt_mask)
+        )
         # Encoder the target again, this time taking the encoded input as the
         # query vector by which to learn translation features tgt*input, then
         # again adding/norming this to the initial layer input.
-        x = self.sublayer[1](x, lambda x: self.src_attn(x, memory, memory, src_mask))
+        src_attn = self.sublayer[1](
+            masked_tgt_attn, lambda src: self.src_attn(src, memory, memory, src_mask)
+        )
         # Finally, run the encoded input through a feed forward network.
-        return self.sublayer[2](x, self.feed_forward)
+        return self.sublayer[2](src_attn, self.feed_forward)
 
 
 class DecoderOnlyLayer(nn.Module):
@@ -320,8 +360,11 @@ class DecoderModel(nn.Module):
 
 
 class EncoderDecoderModel(nn.Module):
-    """A standard Encoder-Decoder architecture for translation tasks, also referred
-    to as a sequence-to-sequence transformer in Bishop's Deep Learning.
+    """A standard Encoder-Decoder architecture for translation tasks, also
+    referred to as an attention-based sequence-to-sequence transformer in
+    Bishop's Deep Learning. In this architecture, the original, the queries come
+    from the previous decoder layer, and the memory keys and values come from
+    the output of the encoder.
     """
 
     def __init__(
@@ -343,10 +386,13 @@ class EncoderDecoderModel(nn.Module):
         """Process masked src and target sequences. The input is fully encoded
         before being processed by the decoder.
 
-        @src: b x max_padding  (LongTensor)
-        @tgt: b x max_padding  (LongTensor)
-        @src_mask: b x 1 x (max_padding-1)  (BoolTensor)
-        @tgt_mask: b x (max_padding-1) x 1  (BoolTensor)
+        Args:
+            * src: b x max_padding  (LongTensor)
+            * tgt: b x (max_padding-1)  (LongTensor)
+            * src_mask: b x 1 x (max_padding)  (BoolTensor)
+            * tgt_mask: b x (max_padding-1) x 1  (BoolTensor)
+
+        Returns: a tensor of size (b x (seq_len-1) x d_model)
 
         The input @src and @tgt are both simply integer lookups; the Embedding layer is used
         to lookup each of these vectors from the model.
@@ -363,18 +409,19 @@ class EncoderDecoderModel(nn.Module):
                tokens for domain oriented tasks
         """
         # global log
-        log.info(f"encdec src: {src.size()}  {src.type()}")
-        log.info(f"encdec tgt: {tgt.size()}  {tgt.type()}")
-        log.info(f"encdec src_mask: {src_mask.size()}  {src_mask.type()}")
-        log.info(f"encdec tgt_mask: {tgt_mask.size()}  {tgt_mask.type()}")
+        log.info(
+            f"encdec src: {src.size()} tgt: {tgt.size()}"
+            + f"  src_mask: {src_mask.size()}  tgt_mask: {tgt_mask.size()}"
+        )
 
         return self.decode(self.encode(src, src_mask), src_mask, tgt, tgt_mask)
 
     def encode(self, src, src_mask):
         """encode runs the encoder layers and gets their final output.
 
-        @src: b x max_padding  (LongTensor)
-        @src_mask: b x 1 x (max_padding-1)  (BoolTensor)
+        Args:
+            * src: b x max_padding  (LongTensor)
+            * src_mask: b x 1 x max_padding  (BoolTensor)
         """
         # global log
         log.info(
@@ -391,12 +438,15 @@ class EncoderDecoderModel(nn.Module):
         @tgt_mask: size is coupled to tgt size, and is a triangular matrix whose elements above the diagonal are true.
           The size per @tgt is (1 x c x c)
         """
-        # global log
         log.info(
             f"encdec decoder layer: memory.size()={memory.size()} src_mask.size()={src_mask.size()} tgt.size()={tgt.size()} tgt_mask.size()={tgt_mask.size()}"
         )
 
-        return self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
+        out = self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
+
+        log.info(f"encdec final out: {out.size()}")
+
+        return out
 
     def ensure_inference_mode(self):
         if self.training:
@@ -454,8 +504,8 @@ class EncoderModel(nn.Module):
                tokens for domain oriented tasks
         """
         # global log
-        log.info(f"encdec src: {src.size()}  {src.type()}")
-        log.info(f"encdec src_mask: {src_mask.size()}  {src_mask.type()}")
+        log.info(f"encoder.forward src: {src.size()}  {src.type()}")
+        log.info(f"encoder.forward src_mask: {src_mask.size()}  {src_mask.type()}")
 
         return self.encode(src, src_mask)
 
@@ -467,7 +517,7 @@ class EncoderModel(nn.Module):
         """
         # global log
         log.info(
-            f"enc-nly encoder layer: src.size()={src.size()} src_mask.size()={src_mask.size()}"
+            f"enc-only encoder layer: src.size()={src.size()} src_mask.size()={src_mask.size()}"
         )
         return self.encoder(self.src_embed(src), src_mask)
 
@@ -482,15 +532,32 @@ class EncoderModel(nn.Module):
 
 def subsequent_mask(size):
     """Returns a tensor of size (1 x @size x @size) for masking out subsequent
-    positions., thus ensuring the auto-regressive property of decoders. Output
-    embeddings are offset by one position. This returns an upper triangular
-    matrix of booleans whose diagonal and below-diagonal entries are False."""
+    positions, thus ensuring the auto-regressive property of decoders. This
+    returns an upper triangular matrix of booleans whose diagonal and
+    below-diagonal entries are False.
+
+    Returns: a tensor whose elements above the diagonal are False, and both the
+    diagonal and below-diagonal elements set to True.
+
+    >>> torch.triu(torch.ones(1,4,4), diagonal=1)
+    tensor([[[0., 1., 1., 1.],
+            [0., 0., 1., 1.],
+            [0., 0., 0., 1.],
+            [0., 0., 0., 0.]]])
+
+    >>> torch.triu(torch.ones(1,4,4), diagonal=1) == 0
+    tensor([[[ True, False, False, False],
+            [ True,  True, False, False],
+            [ True,  True,  True, False],
+            [ True,  True,  True,  True]]])
+    """
 
     # Note: the '1' first dim is inferred by torch to be for batch, i.e.
-    # torch.ones((1,2,2)) is '[[[1, 1],[0, 1]]]'
+    # torch.ones((1,2,2)) is '[[[1, 1],[1, 1]]]'
     attn_shape = (1, size, size)
     # Creates an upper triangular matrix whose diagonal is zero; the 'diagonal'
-    # param indicates how many diagonals above the main diagonal to set to zero.
+    # param indicates how many diagonals above the main diagonal to shift the
+    # upper elements.
     subsequent_mask = torch.triu(torch.ones(attn_shape), diagonal=1).type(torch.uint8)
     # Converts the forementioned matrix' 1s entries to True, 0s to False.
     return subsequent_mask == 0
@@ -524,11 +591,13 @@ def example_mask():
     )
 
 
-def attention(query, key, value, mask=None, dropout=None):
+# TODO: is mask ever None? This check bugs me, remove default of None if possible.
+def attention(query, key, value, mask=None, dropout=None, module_name: str = ""):
     """
-    Per the masking issue: it might be worth looking at https://github.com/harvardnlp/annotated-transformer/issues/137.
-    There is a reported issue with make_std_mask. The first-principles definition
-    of std-mask has not been reviewed / is the most opaque part of this code.
+    Per the masking issue: it might be worth looking at
+    https://github.com/harvardnlp/annotated-transformer/issues/137. There is a
+    reported issue with make_std_mask. The first-principles definition of
+    std-mask has not been reviewed and is the most opaque part of this code.
 
     An attention function maps a query and a set of key-value pairs to an
     output, where the query, keys, values, and output are all vectors.  The
@@ -542,36 +611,84 @@ def attention(query, key, value, mask=None, dropout=None):
     by $sqrt{d_k}$, and apply a softmax function to obtain the weights on the
     values.
 
+    The inputs to this method are more detailed in their preparation in the
+    MultiheadedAttention forward() method. Each query, key, and value argument
+    represents each input token embedding sliced into h components and grouped
+    per head. To understand the functionality it is best to ignore the batch
+    dimension; focus on (h x seq_len x (d_model / h)) and note the indexing into
+    this: 0th -> head, 1st -> seq token, 2nd -> components of sliced embeddings.
+    In plain english, the first index provides the sequence of embeddings of h1.
+    If the original embedding sequence is [a, b, c, d] where each is d_model and
+    h is 2, then the 0th index contains [a0, b0, c0, d0] and 1st index contains
+    [a1, b1, c1, d1], where a0 is the first half of the a embedding and a1 is
+    the second half.
+
+    Now, for the actual dot-product attention operation of these inputs, q =
+    [q0, q1, q2, q3] and k = [k0, k1, k2, k3] where each 'x_i' (e.g. q0) is
+    dimension (d_model / h), so some vector, and each of these represent
+    sequential tokens (as sliced token embeddings). The transpose operation
+    ensures proper vector dot producting: let q and k be seq_len x (d_model /
+    h); then k must be transposed such that each token slice is dotted,
+    satsifying dot(q0, k0). The result score matrix, where '*' denotes dot
+    product, is:
+
+        scores =
+            q0*k0  q0*k1  q0*k2 ... q1*k0  q1*k1  q1*k2 ... q2*k0  q2*k1  q2*k2
+            ... ...
+
+    After masking:
+
+        scores =
+            q0*k0   -1e9   -1e9 ... q1*k0  q1*k1   -1e9 ... q2*k0  q2*k1  q2*k2
+            ... ...
+
+
+    Masking then ensures that query tokens cannot be related to key tokens at
+    indices greater than the query.
+
     Args:
-        * query: 1 x h x seq_len x b
-        * key:   1 x h x seq_len x b
-        * value: 1 x h x seq_len x b
-        * mask:
+        * query: b x h x seq_len x (d_model / h)
+        * key:   b x h x seq_len x (d_model / h)
+        * value: b x h x seq_len x (d_model / h)
+        * mask:  (b x 1 x seq_len) for encoder self-attn, and (b x 1 x
+          (seqlen-1) x (seqlen-1)) for tgt cross-attention.
         * dropout: if any
     """
     # Get the dimensionality d_head
-    d_k = query.size(-1)
+    d_head = query.size(-1)
+    # Transpose key such that matrix multiplication. The important dimensions,
+    # omitting the leading batch dimension, are (head, seq_len, d_head). The
+    # matrix multiplication here establishes the relationship between every
+    # input token of each input sequence, an O(n**2) op. So mentally now you can
+    # also ignore the head dimension, and focus on (seq_len, d_head). The
+    # transpose simply arranges sizes for this matrix-multiplication, such that
+    # every src token is related with every tgt token, via dot product.
+    # Accordingly, the output dimension will be (seq_len, seq_len). Thus,
+    # transpose key from (seq_len, d_head) to (d_head, seq_len), which is what
+    # this transpose(-2, -1) performs.
     k_t = key.transpose(-2, -1)
     log.info(
-        f"In attn: d_k={d_k} q={query.size()} k={key.size()} k_t=k.transpose(-2,-1)={k_t.size()}"
+        f"{module_name}  In attn: d_k={d_head} q={query.size()} k={key.size()} k_t=k.transpose(-2,-1)={k_t.size()} mask={(mask.size() if mask is not None else "NONE")}"
     )
 
     """
-    
-    """
-    scores = torch.matmul(query, k_t) / math.sqrt(d_k)
+    Scores are (seq_len x seq_len) for each src and tgt sequence (ignoring head
+    and batch dimensions). There are two cases, (1) query and keys (and values)
+    represent tokens from the same sequence (2) they represent tokens from
+    separate sequences. For (1) the matrix multiplication to generate the scores
+    relate tokens to eachother, for (2) they relate possibly inter-language
+    words to one another.
 
+    * query size: (64, 8, 72, 64) which is (b, h, seq_len, d_model / h)
+    * key size: (64, 8, 72, 64) which is (b, h, seq_len, d_model / h)
+    * key_t size: (64, 8, 64, 72) which is (b, h, d_model / h, seq_len)
+    * scores size: (64, 8, 72, 72) which is (b, h, seq_len_q, seq_len_k)
+
+    When inspecting sizes, it is best to ignore batch (b) and h (num heads), and
+    focus only on the sequences of head-chopped feature vectors of size (d_model
+    / h).
     """
-    Output during training:
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 71, 72])
-        mask.size=torch.Size([8, 1, 71, 71]) scores=torch.Size([8, 8, 71, 71])
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 71, 72])
-    Output time output:
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 72, 72])
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([8, 8, 72, 72])
-        mask.size=torch.Size([1, 1, 1, 1]) scores=torch.Size([1, 8, 1, 1])
-        mask.size=torch.Size([8, 1, 1, 72]) scores=torch.Size([1, 8, 1, 576])
-    """
+    scores = torch.matmul(query, k_t) / math.sqrt(d_head)
 
     if mask is not None:
         # Set masked scores to negative large-numbers, such that their output
@@ -579,38 +696,121 @@ def attention(query, key, value, mask=None, dropout=None):
         old_shape = mask.shape
         if mask.size()[-1] != scores.size()[-1]:
             mask = mask.view(1, 1, 1, -1)
-            log.info(
-                f"mask size {old_shape} != scores size {scores.size()}, reshaped to {mask.size()}. This is currently needed during inference because ys has no batch dim."
+            log.error(
+                f"MASK MODIFICATION {module_name}  mask size {old_shape} != scores size {scores.size()}, reshaped to {mask.size()}. This is currently needed during inference because ys has no batch dim."
+            )
+            raise ValueError(
+                "Exiting. Review the previous error and sizes to understand why the obsolete mask view() call was required."
             )
 
         log.info(
-            f"q={query.size()} k={key.size()} k_t={k_t.size()} v={value.size()}"
+            f"{module_name}  q={query.size()} k={key.size()} k_t={k_t.size()} v={value.size()}"
             + f"  scores={scores.size()} mask={mask.size()} mask_old_shape={old_shape}"
         )
 
+        """masked_fill: this functionality is given online from this source example.
+            [[1.0, 2.0, 3.0],
+            [4.0, 5.0, 6.0]]
+
+        You want to change the values at [0,0] and [1,1] to 9.9, as:
+
+            [[9.9, 2.0, 3.0],
+            [4.0, 9.9, 6.0]]
+
+        Create a mask, 'msk':
+            
+            [[0, 1, 1],
+            [1, 0, 1]]
+
+        Then call masked_fill():
+
+            result = source.masked_fill(msk == 0, 9.9)
+
+        Here, mask is a matrix whose entries above the diagonal are set to False.
+        Despite the developer rule to use assertive values (not 'False'), what this
+        says is that mask the False entries to a very large negative value before
+        the softmax such that after softmax, these entries are effectively zero,
+        and therefore excluded from modeling. The indices of the scores matrix
+        represent sequence indices: the row indices are src sequence indices, and
+        the col indices are tgt indices. The diagonal and elements below it allow
+        information to be modeled for a src token's relationship with tgt elements at
+        the same index.
+        """
+
+        # Mask the scores. There are two cases, (1) the mask applies to padding
+        # tokens (2) the mask applies to above diagonal key tokens to prevent
+        # the model from looking ahead. The mask may be (1 x col) sized, i.e.
+        # for src-attn masking; in this case the mask is simply broadcast to all
+        # rows of the resulting matrix. For (2) the mask is upper-triangular
+        # such that above-diagonal elements are set to -1e9, and thereby no
+        # qi has a score for any kj where j>i, and thereby the query tokens
+        # cannot be related to key tokens that are further in the sequence.
+        #
+        # TODO: for the self-attn case, the mask is sized (b x 1 x 1 x seqlen),
+        # i.e. ([64, 1, 1, 72]). This broadcasts this mask over all columns of
+        # padding tokens defined by the mask; this seems incorrect, as the
+        # scores matrix represents the sequence in both the row and col
+        # direction, therefore the mask ought to mask columns after the first
+        # pad-idx column, as well as rows after that same pad-idx. I need to
+        # justify why this is not done.
         scores = scores.masked_fill(mask == False, -1e9)
-    p_attn = scores.softmax(dim=-1)
+
+    # Apply softmax across the last dimension of the scores. This applies
+    # softmax across the columns.
+    #
+    # The @scores matrix is (seqlen x seqlen) whose rows span the dimension of
+    # keys, i.e. the first row is [ q0*k0 q0*k1 q0*k2 ]. Per the paper, softmax
+    # is applied to the rows of this matrix, i.e. across the components of k[*].
+    # I don't know much the orientation of softmax matters, but note that for
+    # the first row with most subsequent tokens masked, the result is [1.0 0.0
+    # 0.0 ... 0.0]. Consequently the earlier rows concentrate more of the
+    # probability distribution (at the start of each vector) and the later
+    # vectors will be longer and have the softmax output more distributed.
+    # Perhaps the values matrix and its weights inherently accounts for this.
+    # Also note that when subsequent-token (tgt) masking is applied above the
+    # diagonal, the first entry in the first row will always be 1.0; this entry
+    # could represent the '<s>' start-of-sequence token, but is worth
+    # recognizing.
+    key_axis = -1
+    p_attn = scores.softmax(dim=key_axis)
+
+    # Apply dropout to the score outputs, randomly assigning zero to entries of
+    # the matrix.
     if dropout is not None:
         p_attn = dropout(p_attn)
 
+    """Finally, multiply the weighted scores: ignoring heads, batches, and the
+    division of d_model by num heads, p_attn is (seqlen x seqlen) and value is
+    (seqlen x d_model). As values contains the original sequence embeddings, the
+    resulting matrix applies the weighted (and possibly diagonalized) sums of
+    the scores to each component of the values matrix. For example the first row
+    entries are: [ q0k0v0  (q1k0v0 + q1k1v1) (q2k0v0 + q2k1v1 + q2k2v2) ... ],
+    where qikj represents the softmax of qi and kj's dot product. Notice how
+    complicated the resulting entries are; but also note that dot-product
+    attention is not the only form, such as additive attention. So this isn't
+    set in stone, it is a function dependency and an opportunity for hacking
+    other representations.
+    """
     return torch.matmul(p_attn, value), p_attn
 
 
 class MultiHeadedAttention(nn.Module):
-    """Multihead attention allows the model to jointly attend to information from
-    different representation subspaces at different positions. With a single
-    attention head, averaging inhibits this. The linear weights on each Q, K, V
-    weight matrix are size d_model, but are simply transformed to the space of
-    the heads when needed.
+    """Multihead attention allows the model to jointly attend to information
+    from different representation subspaces at different positions. With a
+    single attention head, averaging inhibits this. The linear weights on each
+    Q, K, V weight matrix are size d_model, but are simply transformed to the
+    space of the heads when needed. Formally, the outputs of each head are
+    concatenated together and multiplied by a weight matrix W_0 to get the final
+    output.
 
-        Multihead(Q,K,V) = Concat(head_1, head_2, ... head_h) * W^0 where
-        head_i = Attention(QW_iq, KW_ik, VW_iv) where W_iq in R[d_model x d_k],
-        W_ik in R[d_model x d_k], and W_iv in R[h*d_v x d_model] Basically, the
-        matrices are the sizes of the original matrices scaled down by h, and
-        such that the row/col math works out the same.
+        Multihead(Q,K,V) = Concat(head_1, head_2, ... head_h) * W^0 where head_i
+        = Attention(QW_iq, KW_ik, VW_iv) where W_iq in R[d_model x d_k], W_ik in
+        R[d_model x d_k], and W_iv in R[h*d_v x d_model] Basically, the matrices
+        are the sizes of the original matrices scaled down by h, and such that
+        the row/col math works out the same.
     """
 
-    def __init__(self, h, d_model, dropout=0.1):
+    def __init__(self, h, d_model, dropout=0.1, module_name=""):
         "Take in model size and number of heads."
         super(MultiHeadedAttention, self).__init__()
         assert (
@@ -625,40 +825,65 @@ class MultiHeadedAttention(nn.Module):
         self.linears = clones(nn.Linear(d_model, d_model), 4)
         self.attn = None
         self.dropout = nn.Dropout(p=dropout)
+        self._module_name = module_name
 
     def original_forward(self, query, key, value, mask=None):
-        """"""
+        """This is the original forward implementation which is much more
+        compact and elegant, closely resembles the paper definition of
+        attention. I exploded the forward implementation simply for some
+        required debugging, which makes this much less readable. Even though
+        this func is not called, I'm leaving it for reference to the intended
+        implementation."""
         if mask is not None:
             # Same mask applied to all h heads.
             mask = mask.unsqueeze(1)
-        nbatches = query.size(0)
 
-        # 1) Do all the linear projections in batch from d_model => h x d_k
+        batch_size = query.size(0)
+
+        # 1) Do all the linear projections in batch from d_model => h x d_k.
         query, key, value = [
-            lin(x).view(nbatches, -1, self.h, self.d_k).transpose(1, 2)
+            lin(x).view(batch_size, -1, self.h, self.d_k).transpose(1, 2)
             for lin, x in zip(self.linears, (query, key, value))
         ]
 
         # 2) Apply attention on all the projected vectors in batch.
         x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
 
-        # 3) "Concat" using a view and apply a final linear.
-        x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_k)
+        # 3) "Concat" using a view and apply a final linear. Transpose converts
+        # the multihead-format of the tensor from (b x h x seqlen x (d_model /
+        # h)) back to (b x seqlen x d_model).
+        x = x.transpose(1, 2).contiguous().view(batch_size, -1, self.h * self.d_k)
         del query
         del key
         del value
         return self.linears[-1](x)
 
     def forward(self, query, key, value, mask=None):
-        """Implements Figure 2"""
+        """Implements that multi-headed attention mechanism. For reference,
+        in encoder-decoder sequence to sequence models the query vectors come
+        from the output of the previous decoder block, whereas the key and value
+        vectors are provided by the final output of the entire encoder chain.
+
+        The internal sizes of W_q, W_k, W_v are identical, d_model. However arg
+        size differs for the encoder vs the decoder.
+
+        Args:
+            * query: tensor of size (b x max_length x d_model)
+            * key: tensor of size (b x max_length x d_model)
+            * value: tensor of size size (b x max_length x d_model)
+            * mask: tensor of size
+        """
 
         if mask is not None:
-            # Same mask applied to all h heads. Unsqueeze inserts a new
-            # dimension a single empty entry at passed index. Example: foo =
+            # The same mask is applied to all h heads. Unsqueeze inserts a new
+            # dimension a single empty entry at the head index. Example: foo =
             # [2,3]  => foo.unsqueeze(0) = [[2,3]] size=(1,2),  and
-            # foo.unsqueeze(1) = [[2],[3]] size=(2x1)
+            # foo.unsqueeze(1) = [[2],[3]] size=(2x1). The [1] index is the
+            # index of the head content, i.e. (b x h x seqlen x (d_model / h)).
             mask = mask.unsqueeze(1)
-        nbatches = query.size(0)
+        q_batch_size = query.size(0)
+        k_batch_size = key.size(0)
+        v_batch_size = value.size(0)
 
         # 1) Do all the linear projections in batch from d_model => h x d_k.
         # Here, each query, key, and value matrix has associated weights and is
@@ -678,19 +903,17 @@ class MultiHeadedAttention(nn.Module):
         # The above is a compact way to write these linear ops on the heads, but
         # enumeration per below allows tracking the algebraic dimensions.
 
-        # global log
-
         # W_q * q   whose dimensions are   (d_model x d_model) * (b x max_padding x d_model)
         # More precisely, W_q in calculations is (d_output x d_input) and its input will
         # be transformed to (d_input x b * max_padding).
         W_q = self.linears[0]
         log.info(
-            f"W_q={W_q.weight.size()} query={query.size()} nbatches={nbatches} d_k={self.d_k}"
+            f"{self._module_name}  W_q={W_q.weight.size()} query={query.size()} nbatches={q_batch_size} d_k={self.d_k}"
         )
-        # W_q * q   whose dimensions are   (d_model x d_model) * (b x max_padding x d_model)
+        # q * W_q   whose dimensions are   (d_model x d_model) * (b x max_padding x d_model)
         #
         # Note that for torch linear layers, the size constraint per matrix multiplication is
-        # per the last dimension, d_model. So the above math is misleading if intepreted per
+        # per the last dimension, d_model. So the above math is misleading if interpreted per
         # textbook linear algebra. The linear size (d_model x d_model) per implementation is
         # (out_features, in_features) respectively for W. The input tensor of size (b x seqlen x d_model)
         # is internally reshaped to (b * seqlen x d_model). All multiplication per the linear
@@ -715,34 +938,142 @@ class MultiHeadedAttention(nn.Module):
         #
         #  Wq is (b x max_padding x d_out_features)   from   Wq (32 x 72 x 512)   and   q_out (32 x 72 x 8 x 64)
         Wq = W_q(query)
-        # -1 tells torch to calculate the size of that dimension per the others. Hence
-        # this results in the q_out dim listed above, where only the last dimensions
-        # changes to 8 x 64, effectively meaning that each d_model vector is just
-        # broken into 8 different sections with independent weights.
-        q_out = Wq.view(nbatches, -1, self.h, self.d_k)
-        log.info(f"Wq={Wq.size()}  q_out={q_out.size()}")
+        # -1 tells torch to calculate the size of that dimension per the others.
+        # Hence this results in the q_out dim listed above, where only the last
+        # dimensions changes to 8 x 64, effectively meaning that each d_model
+        # vector is just broken into 8 different sections with independent
+        # weights.
+
+        """
+        By omitting the first dimension, the batch, we can get a better view of what is happening here
+        by looking at only a single training example, its vectors, and weights.
+
+        Here, r represents a single training example sequence, of two tokens, each of whose embedding dim=4.
+        The first array listed in r represents the first token's embedding vector, and the second array
+        is the second token's embedding vector.
+
+        >>> r = torch.rand((2,4))
+        >>> r
+        tensor([[0.0330, 0.0824, 0.2627, 0.8666],
+                [0.3143, 0.1763, 0.8792, 0.0755]])
+
+        Reconfiguring with view(-1,2,2) is a representation of the equivalent view(-1, h, d_model / h).
+        As shown, the components of the embedding vectors are sliced into equal portions; for example,
+        [0.0330, 0.0824, 0.2627, 0.8666] -> [[0.0330, 0.0824], [0.2627, 0.8666]]. Already note the
+        intended outcome that each head looks at different portions of embeddings. The 0th element
+        or r_v contains the chopped slices of the first token embedding.
+
+        >>> r_v = r.view(-1,2,2)
+        >>> r_v
+        tensor([[[0.0330, 0.0824],
+                [0.2627, 0.8666]],
+
+                [[0.3143, 0.1763],
+                [0.8792, 0.0755]]])
+
+        This is the tough part.
+        The 0th dimension of the new view contains each token's embedding (sliced);
+        the 1st dimension indexes into each head's slice of tokens; the 2nd and last
+        dimension represent indices into the components of each of these slices.
+        Transposing over (0,1) groups all of the first head's components together,
+        the second head, and so on for all heads. This gives h groups (0th dimension),
+        each of size seq_len (1st dimension), and each sized d_h (2nd dimension).
+        As described, note how the first group of arrays are the h1's components,
+        and the second group are h2's components.
+        
+        tensor([[[0.0330, 0.0824],
+                [0.2627, 0.8666]],
+
+                [[0.3143, 0.1763],
+                [0.8792, 0.0755]]])
+                
+
+        >>> r_v_t = r_v.transpose(0,1)
+        >>> r_v_t
+        tensor([[[0.0330, 0.0824],
+                [0.3143, 0.1763]],
+
+                [[0.2627, 0.8666],
+                [0.8792, 0.0755]]])
+
+
+
+
+
+
+        Simulates a single training example of len 2 and d_model=4
+            >>> r = torch.rand((2,4))
+            >>> r
+            tensor([[0.5714, 0.5531, 0.1266, 0.2416],
+                    [0.4489, 0.8925, 0.2747, 0.6700]])
+
+        Transposing the seq and d_model components places all of the 
+        >>> r_t = r.transpose(0,1)
+        >>> r_t
+        tensor([[0.5714, 0.4489],
+                [0.5531, 0.8925],
+                [0.1266, 0.2747],
+                [0.2416, 0.6700]])
+
+
+
+        # Start with a tensor of size (seq_len x d_model)
+        >>> r = torch.rand((1,2,4))
+        >>> r
+        tensor([[[0.4701, 0.0986, 0.3829, 0.0027],
+                [0.9231, 0.0034, 0.1877, 0.3378]]])
+
+        # Running transpose(1,2) places the 0th 
+        >>> r_t = r.transpose(1,2)
+        >>> r_t
+        tensor([[[0.4701, 0.9231],
+                [0.0986, 0.0034],
+                [0.3829, 0.1877],
+                [0.0027, 0.3378]]]) 
+        
+        
+        
+        """
+
+        q_out = Wq.view(q_batch_size, -1, self.h, self.d_k)
+        log.info(f"{self._module_name}  Wq={Wq.size()}  q_out={q_out.size()}")
         query = q_out.transpose(1, 2)
-        log.info(f"query={query.size()}")
+        log.info(f"{self._module_name}  query={query.size()}")
 
         # W_k * k   whose dimensions are   (d_model x d_model) * (d_model x)
         W_k = self.linears[1]
-        log.info(f"W_k={W_k.weight.size()} key={key.size()} nbatches={nbatches}")
-        Wk = W_k(key)
-        k_out = Wk.view(nbatches, -1, self.h, self.d_k)
         log.info(
-            f"Wk={Wk.size()}  k_out={k_out.size()} (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))"
+            f"{self._module_name}  W_k={W_k.weight.size()} key={key.size()} nbatches={k_batch_size}"
+        )
+        Wk = W_k(key)
+        # Regression note: this view change was problematic because of the -1.
+        # For an inference task, when query is [1, 8, 1, 64] for a single token
+        # sequence, and key is [64, 72, 512] and Wv is [64, 72, 512] for a
+        # full-length sequence encoding, then k_out becomes [1, 4608, 8, 64] due
+        # to the -1: 'Wk.view(1, -1, 8, 512)'. The resolution is to always pad
+        # tgt to full seqlen.
+        #
+        # TODO: consider error checking sizes on ingress to ensure this
+        # regression is logged or raised.
+        k_out = Wk.view(k_batch_size, -1, self.h, self.d_k)
+        log.info(
+            f"{self._module_name}  Wk={Wk.size()}  k_out={k_out.size()} (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))"
         )
         key = k_out.transpose(1, 2)
-        log.info(f"key={key.size()} (via k_out.transpose(1, 2))")
+        log.info(f"{self._module_name}  key={key.size()} (via k_out.transpose(1, 2))")
 
         # W_v * v   whose dimensions are   (d_model x d_model) * (d_model x)
         W_v = self.linears[2]
-        log.info(f"W_v={W_v.weight.size()} value={value.size()} nbatches={nbatches}")
+        log.info(
+            f"{self._module_name}  W_v={W_v.weight.size()} value={value.size()} v-batches={v_batch_size}"
+        )
         Wv = W_v(value)
-        v_out = Wv.view(nbatches, -1, self.h, self.d_k)
-        log.info(f"Wv={Wv.size()}  v_out={v_out.size()}")
+        v_out = Wv.view(v_batch_size, -1, self.h, self.d_k)
+        log.info(
+            f"{self._module_name}  Wv={Wv.size()}  v_out={v_out.size()} v_batch_size={v_batch_size}"
+        )
         value = v_out.transpose(1, 2)
-        log.info(f"value={value.size()}")
+        log.info(f"{self._module_name}  value={value.size()}")
 
         # 2) Apply attention on all the projected vectors in batch. The second
         # return value self.attn (stored here for visualization) contains the
@@ -750,8 +1081,15 @@ class MultiHeadedAttention(nn.Module):
         # Value matrix. Thus it contains the relatedness scores of queries and
         # keys, before multiplication/transformation by V back into the model
         # dim-space.
-        x, self.attn = attention(query, key, value, mask=mask, dropout=self.dropout)
-        log.info(f"x={x.size()} self.attn={self.attn.size()}")
+        x, self.attn = attention(
+            query,
+            key,
+            value,
+            mask=mask,
+            dropout=self.dropout,
+            module_name=self._module_name,
+        )
+        log.info(f"{self._module_name}  x={x.size()} self.attn={self.attn.size()}")
 
         # 3) "Concat" using a view and apply a final linear.
         #
@@ -759,13 +1097,15 @@ class MultiHeadedAttention(nn.Module):
         # contiguous, despite previous tranpose and other view operations; it
         # returns the original tensor if no transforms have been applied, and a
         # copied new tensor otherwise.
-        x = x.transpose(1, 2).contiguous().view(nbatches, -1, self.h * self.d_k)
+        x = x.transpose(1, 2).contiguous().view(q_batch_size, -1, self.h * self.d_k)
         del query
         del key
         del value
         final_out = self.linears[-1](x)
         # final_out = (32 x 72 x 512)
-        log.info(f"x reshaped={x.size()} final_out={final_out.size()}")
+        log.info(
+            f"{self._module_name}  x reshaped={x.size()} final_out={final_out.size()}"
+        )
 
         return final_out
 
@@ -855,7 +1195,7 @@ def example_positional():
     )
 
 
-def make_model(
+def make_encdec_model(
     src_vocab_size: int,
     tgt_vocab_size: int,
     N: int = 6,
@@ -864,15 +1204,34 @@ def make_model(
     h: int = 8,
     dropout: int = 0.1,
 ):
-    "Helper: Construct a model from hyperparameters."
+    """make_encdec_model builds and returns a model consisting of both an
+    encoder and decoder, per the original Attention Is All You Need paper, aka
+    an attention-based seq2seq model.
+    """
     c = copy.deepcopy
-    attn = MultiHeadedAttention(h, d_model)
     # FF network layer maps d_model -> d_ff hidden layer -> d_model.
     ff = PositionwiseFeedForward(d_model, d_ff, dropout)
     position = PositionalEncoding(d_model, dropout)
     model = EncoderDecoderModel(
-        encoder=Encoder(EncoderLayer(d_model, c(attn), c(ff), dropout), N),
-        decoder=Decoder(DecoderLayer(d_model, c(attn), c(attn), c(ff), dropout), N),
+        encoder=Encoder(
+            EncoderLayer(
+                d_model,
+                MultiHeadedAttention(h, d_model, module_name="encoder-self-attn"),
+                c(ff),
+                dropout,
+            ),
+            N,
+        ),
+        decoder=Decoder(
+            DecoderLayer(
+                d_model,
+                MultiHeadedAttention(h, d_model, module_name="decoder-masked-attn"),
+                MultiHeadedAttention(h, d_model, module_name="decoder-srctgt-attn"),
+                c(ff),
+                dropout,
+            ),
+            N,
+        ),
         # Sequential: modules are added to it in the order passed in the
         # constructor. The ``forward()`` method of ``Sequential`` accepts any
         # input and forwards it to the first module it contains. It then
@@ -976,7 +1335,7 @@ def make_encoder_model(
 
 
 def inference_test():
-    test_model = make_model(11, 11, 2)
+    test_model = make_encdec_model(11, 11, 2)
     test_model.eval()
     src = torch.LongTensor([[1, 2, 3, 4, 5, 6, 7, 8, 9, 10]])
     src_mask = torch.ones(1, 1, 10)
@@ -1000,6 +1359,7 @@ def inference_test():
     return ys
 
 
+# TODO: should these be moved the unit test?
 def encoder_inference_test():
     test_model = make_encoder_model(11, 3)
     test_model.eval()
@@ -1022,6 +1382,7 @@ def encoder_inference_test():
     return ys
 
 
+# TODO: should these be moved the unit test?
 def decoder_inference_test():
     test_model = make_decoder_model(11, 3)
     test_model.eval()
@@ -1050,25 +1411,78 @@ def run_tests():
 
 
 class Batch:
-    """Object for holding a batch of data with mask during training."""
+    """Object for holding a batch of data with mask during training. Inspect
+    and understand this object's attributes carefully, as the tgt input is
+    modified to ensure autoregressive training and masking. This can be the most
+    difficult code in transformers, but ultimately it implements the downstream
+    size requirements determined by the pencil math of tensors in the separate
+    attention mechanism in the encoder vs decoder.
 
-    def __init__(self, src, tgt=None, pad=2):
+    Attributes:
+        * src: a tensor of size (b x seq_len)
+        * src_mask: a bool tensor of size (b x 1 x seq_len) masks the src input
+          padding elements for the given src instance of (b x 1 x seqlen).
+        * tgt: a tensor of size (b x seq_len-1). This is tgt output excluding
+          the final token (often a mere padding token) used for the encoder.
+          NOTE: wherever this is used, confirm on paper that the minus-one size
+          is correct.
+        * tgt_y: a tensor of size (b x seq_len-1). This is tgt output excluding
+          the first token (often a mere padding token), used for the decoder.
+          NOTE: wherever this is used, confirm on paper that the minus-one size
+          is correct.
+        * tgt_mask is the mask derived from make_std_mask and tgt. NOTE: as tgt
+          removes one final token, verify that the dimension of tgt_mask is
+          correct in its application.
+        * ntokens: the number of non-padding tokens, useful for accounting in
+          training.
+
+    NOTE: tgt=tgt[:-1] and tgt_y=tgt[1:], offset by one. And for the instance
+    that src==tgt, tgt will consist of only src[:-1], chopping the last token
+    for tgt, and shifting by one for tgt_y (). Check the src and tgt mask
+    implementation below.
+    """
+
+    def __init__(self, src: torch.Tensor, tgt: torch.Tensor, pad_id: int = 2):
+        """
+        Args:
+            * src: a tensor of size (b x seq_len)
+            * tgt: a tensor of size (b x seq_len)
+            * pad: the pad id
+        """
         self.src = src
-        self.src_mask = (src != pad).unsqueeze(-2)
-        if tgt is not None:
-            self.tgt = tgt[:, :-1]
-            self.tgt_y = tgt[:, 1:]
-            self.tgt_mask = self.make_std_mask(self.tgt, pad)
-            self.ntokens = (self.tgt_y != pad).data.sum()
+
+        # src_mask: masks the src input padding elements, i.e. 'tensor([[[ True,
+        # True,  True,  ..., False, False, False]], '.
+        self.src_mask = (src != pad_id).unsqueeze(-2)
+
+        # TODO: src_mask, tgt, tgt_y and tgt_mask are the most nuanced part of this
+        # code and need to be documented; the off by one risks are significant.
+
+        # tgt is the tgt output, EXCLUDING the final token, used for the encoder.
+        self.tgt = tgt[:, :-1]
+        # tgt_y is the tgt output EXCLUDING the first token, used for the decoder.
+        self.tgt_y = tgt[:, 1:]
+        # tgt_mask is the mask derived from make_std_mask
+        self.tgt_mask = self.make_std_mask(self.tgt, pad_id)
+        self.ntokens = (self.tgt_y != pad_id).data.sum()
 
     @staticmethod
-    def make_std_mask(tgt, pad):
+    def make_std_mask(tgt: torch.Tensor, pad_id: int):
         """Create a mask to hide padding and future words.
 
-        TODO: there is a reported bug in this code, need to review. https://github.com/harvardnlp/annotated-transformer/issues/137
+        Args:
+            * tgt: the tgt tensor of size (b x (seqlen-1))
+            * pad: the pad-id
+
+        Returns: a tensor of size (b x (seqlen-1) x (seqlen-1)), whose final two
+        dimensions are the upper-triangular boolean mask matrices.
+
+        TODO: there is a reported bug in this code, need to review.
+        https://github.com/harvardnlp/annotated-transformer/issues/137
         """
-        tgt_mask = (tgt != pad).unsqueeze(-2)
+        tgt_mask = (tgt != pad_id).unsqueeze(-2)
         tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data)
+
         return tgt_mask
 
 
@@ -1082,8 +1496,8 @@ class TrainState:
 
 
 def run_epoch(
-    data_iter,
-    model,
+    data_iter: TGenerator[Batch, None, None],
+    model: EncoderDecoderModel,
     loss_compute,
     optimizer,
     scheduler,
@@ -1091,7 +1505,10 @@ def run_epoch(
     accum_iter=1,
     train_state=TrainState(),
 ) -> Tuple[float, TrainState]:
-    """Train a single epoch"""
+    """Train a single epoch over the entire batch iterator.
+
+    NOTE: remember that Batch offsets tgt by one.
+    """
     start = time.time()
     total_tokens = 0
     total_loss = 0
@@ -1099,11 +1516,14 @@ def run_epoch(
     n_accum = 0
     for i, batch in enumerate(data_iter):
         out = model.forward(batch.src, batch.tgt, batch.src_mask, batch.tgt_mask)
+        log.info(f"model.forward  out={out.size()}")
+        exit()
         loss, loss_node = loss_compute(out, batch.tgt_y, batch.ntokens)
         # loss_node = loss_node / accum_iter
-        if mode == "train" or mode == "train+log":
+        if mode in ["train", "train+log"]:
             loss_node.backward()
             train_state.step += 1
+            # src.shape[0] is size of batch, i.e. #samples
             train_state.samples += batch.src.shape[0]
             train_state.tokens += batch.ntokens
             if i % accum_iter == 0:
@@ -1116,7 +1536,7 @@ def run_epoch(
         total_loss += loss
         total_tokens += batch.ntokens
         tokens += batch.ntokens
-        if i % 40 == 1 and (mode == "train" or mode == "train+log"):
+        if i % 40 == 1 and mode in ["train", "train+log"]:
             lr = optimizer.param_groups[0]["lr"]
             elapsed = time.time() - start
             log.info(
@@ -1169,7 +1589,7 @@ def example_learning_schedule():
         )
         tmp = []
         # take 20K dummy training steps, save the learning rate at each step
-        for step in range(20000):
+        for _ in range(20000):
             tmp.append(optimizer.param_groups[0]["lr"])
             optimizer.step()
             lr_scheduler.step()
@@ -1382,7 +1802,7 @@ def greedy_decode(model: EncoderDecoderModel, src, src_mask, max_len, start_symb
 
 
 def beam_decode(
-    model: EncoderDecoderModel, src, src_mask, max_len, start_symbol, beam_length
+    model: EncoderDecoderModel, src, src_mask, max_len, start_id, beam_length, pad_id
 ) -> List[torch.Tensor]:
     """beam_decode is the same as greedy_decode except that we sample the top
     @beam_length outputs as @ys. That is, (1) encode the entire provided input
@@ -1408,7 +1828,6 @@ def beam_decode(
        one to the current word-sequence's probability, and append the word.
         * Modification: for d>1, continue to sample and replace
 
-
     """
 
     # TODO: update me with type info when their structure is understood.
@@ -1422,7 +1841,6 @@ def beam_decode(
 
     model.ensure_inference_mode()
 
-    # global log
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
     log.info(
@@ -1433,8 +1851,10 @@ def beam_decode(
     # could run inference much faster for a batch of items in the beam at once.
     # Beam search seems extremely amenable to very fast batchification, whereby
     # long beams could be decoded all at once, instead of through iteration.
-
-    ys = torch.zeros(1, 1).fill_(start_symbol).type_as(src.data)
+    batch_size = src.size(0)
+    ys = torch.zeros(batch_size, max_len).fill_(pad_id).type_as(src.data)
+    # Initialize all batches (there should be only 1) to start-id.
+    ys[:, 0] = start_id
     # The beam is a list of tensors and their associated probabilities.
     # Initialized to the start_symbol, with prob chosen such that subsequent
     # probs accumulate correctly.
@@ -1450,13 +1870,16 @@ def beam_decode(
         # parameters, where beam supports total scope and k is effectively the
         # search radius around candidate words.
         #
-        #  TODO: replace beam with a heap to avoid large beam and sorting.
+        # TODO: replace beam with a heap to avoid large beam and sorting.
+        #
         # TOD: replace deepcopy with a more efficient pattern when code paths harden. This is cope to prevent the infinite loop of appending
         # to the beam while iterating it.
         next_beam = []
         for beam_item in beam:
-            # At each time step, mask all subsequent terms to prevent the model looking ahead.
-            ys_mask = subsequent_mask(beam_item.ys.size(1)).type_as(src.data)
+            # At each time step, mask all subsequent terms to prevent the model
+            # looking ahead.
+            ys_mask = Batch.make_std_mask(beam_item.ys, pad_id).type_as(src.data)
+            # ys_mask = subsequent_mask(beam_item.ys.size(1)).type_as(src.data)
 
             # TODO: input to the decoder is given as (1 x seqlen), where b=1.
             # The batch size b could easily be used to support decoding batches
@@ -1481,10 +1904,10 @@ def beam_decode(
             # the same size as ys, since we haven't predicted the next word
             # until below.
             out = model.decode(memory, src_mask, beam_item.ys, ys_mask)
-            log.info(
-                f"ys={beam_item.ys.size()} ys_mask={ys_mask.size()} out={out.size()}"
-            )
             prob = model.generator(out[:, -1])
+            log.info(
+                f"beam_decode: ys={beam_item.ys.size()} ys_mask={ys_mask.size()} out={out.size()} prob={prob.size()}"
+            )
             # Retrieve top beam-length max next-words. By the pigeonhole
             # principle, this ensures total coverage of possible next-best
             # values. You could implement heuristics here to weight k by current
@@ -1521,12 +1944,14 @@ def beam_decode(
             log.info(f"LEN: {len(list(zip(probs, next_word_indices)))}")
 
             for prob, next_word_index in zip(probs, next_word_indices):
-                log.info(f">>> next_word_index size: {next_word_index.size()}")
+                log.info(
+                    f">>> next_word_index size: {next_word_index.size()}  prob size: {prob.size()}"
+                )
                 next_word = next_word_index.data[0]
                 next_ys = torch.cat(
                     [
                         beam_item.ys,
-                        torch.zeros(1, 1).type_as(src.data).fill_(next_word),
+                        torch.zeros(batch_size, 1).type_as(src.data).fill_(next_word),
                     ],
                     dim=1,
                 )
@@ -1541,6 +1966,13 @@ def beam_decode(
 
         # TODO: per other TODOs, optimize beam/next_beam redundancy, and use a heap/pque.
         beam = next_beam
+        log.info(f"beam: {beam[0].prob.size()}")
+        log.info(
+            "Exiting here so you complete beam_decode: make this func consistent with training time "
+            + "model input/output sizes. View 'out' and 'generator' and confirm "
+            + "usage and sizes are correct."
+        )
+        exit()
         beam = sorted(beam, key=lambda beam_item: beam_item.prob)
         beam = beam[:beam_length]
 
@@ -1766,7 +2198,7 @@ def hybrid_beam_dfs_decode(
 def example_simple_model():
     V = 11
     criterion = LabelSmoothing(size=V, padding_idx=0, smoothing=0.0)
-    model = make_model(V, V, N=2)
+    model = make_encdec_model(V, V, N=2)
 
     optimizer = torch.optim.Adam(
         model.parameters(), lr=0.5, betas=(0.9, 0.98), eps=1e-9
@@ -1827,7 +2259,9 @@ def tokenize(text, tokenizer):
     return [tok.text for tok in tokenizer.tokenizer(text)]
 
 
-def yield_tokens(data_iter, tokenizer, index):
+def yield_tokens(
+    data_iter: TGenerator[Tuple[str, str], None, None], tokenizer, index: int
+):
     for from_to_tuple in data_iter:
         yield tokenizer(from_to_tuple[index])
 
@@ -1869,8 +2303,11 @@ def build_en_vocabulary(
     spacy_en: Language,
     min_frequency: int = 2,
 ) -> Vocab:
-    """
-    Returns a Vocab object for mapping tokens to indices.
+    """Returns a Vocab object for mapping tokens to indices, built from the passed
+    train and validation iters. NOTE: this is for in-language training only,
+    whereby the src and tgt sequences are the same, not translation. This
+    returns a vocab based on only the src sequence tokens, which assumes that
+    the tgt is identical.
 
     Args:
         * train_iter: An iterator producing (str,str) tups, where the first item
@@ -1878,7 +2315,8 @@ def build_en_vocabulary(
         * val_iter: The validation iterator, the same type as @train_iter.
         * spacy_en: The spacy english model.
         * min_frequency: The minimum term frequency for a token (word) to be
-          included in the vocab.
+          included in the vocab. 2 is ideal to drop non-sensical words, but
+          requires sufficient data to see most words twice.
     """
 
     def tokenize_en(text):
@@ -1886,7 +2324,7 @@ def build_en_vocabulary(
 
     log.info("Building English Vocabulary ...")
     vocab = build_vocab_from_iterator(
-        yield_tokens(itertools.chain(train_iter, val_iter), tokenize_en, index=1),
+        yield_tokens(itertools.chain(train_iter, val_iter), tokenize_en, index=0),
         min_freq=min_frequency,
         specials=["<s>", "</s>", "<blank>", "<unk>"],
     )
@@ -1925,8 +2363,8 @@ def save_vocab(vocab: Vocab, vocab_path: Path):
 
 def collate_batch(
     batch,
-    src_pipeline: Callable[[str], List[str]],
-    tgt_pipeline: Callable[[str], List[str]],
+    src_tokenizer: Callable[[str], List[str]],
+    tgt_tokenizer: Callable[[str], List[str]],
     src_vocab: Vocab,
     tgt_vocab: Vocab,
     device: str,
@@ -1935,23 +2373,26 @@ def collate_batch(
     pad_id: int,
     max_padding: int = 128,
 ):
-    """
-    Batching matters a ton for speed. We want to have very evenly divided
+    """Batching matters a ton for speed. We want to have very evenly divided
     batches, with absolutely minimal padding. To do this we have to hack a bit
     around the default torchtext batching. This code patches their default
     batching to make sure we search over enough sentences to find tight batches.
     """
 
     def to_padded_tensor(token_ids: List[int], tokens: List[str]) -> torch.Tensor:
-        # Plus 2 due to account for bs and eos id.
+        """to_padded_tensor takes a sequence of token ids, prepending a bos,
+        appending the eos id, and then padding the remainder with the padding
+        id."""
+
+        # Plus 2 to account for bs and eos id added later.
         if (len(token_ids) + 2) > max_padding:
             log.warning(
                 "processed len %d > max_padding of %d (includes bs and eos tokens) in collate_batch for seq %s, truncating training sequence",
-                len(processed),
+                len(token_ids),
                 max_padding,
                 tokens,
             )
-            tokens_ids = token_ids[: (max_padding - 2)]
+            token_ids = token_ids[: (max_padding - 2)]
         # Minus 2 to account for the bs and eos tokens.
         num_pads = (max_padding - 2) - len(token_ids)
 
@@ -1984,14 +2425,16 @@ def collate_batch(
     bs = torch.tensor([bs_id], device=device)  # <s> token id
     eos = torch.tensor([eos_id], device=device)  # </s> token id
 
+    # FUTURE: iteratorify this code, or at least the caller, such that the
+    # entire dataset is not read into memory.
     src_list, tgt_list = [], []
     for _src, _tgt in batch:
-        src_tokens = src_pipeline(_src)
+        src_tokens = src_tokenizer(_src)
         src_ids = src_vocab(src_tokens)
         processed_src = to_padded_tensor(src_ids, src_tokens)
         src_list.append(processed_src)
 
-        tgt_tokens = tgt_pipeline(_tgt)
+        tgt_tokens = tgt_tokenizer(_tgt)
         tgt_ids = tgt_vocab(tgt_tokens)
         processed_tgt = to_padded_tensor(tgt_ids, tgt_tokens)
         tgt_list.append(processed_tgt)
@@ -2084,7 +2527,7 @@ def create_dataloaders(
     return train_dataloader, valid_dataloader
 
 
-def read_novel_sentences(fpath: str) -> TGenerator[str, None, None]:
+def read_line_sentences(fpath: str) -> TGenerator[str, None, None]:
     """read_novel_sentences reads a novel-like file, which is any file
     whose lines extend sentences over one or more lines, like the hucklberry
     finn opensource novel.
@@ -2096,13 +2539,61 @@ def read_novel_sentences(fpath: str) -> TGenerator[str, None, None]:
     """
 
     def read_lines() -> TGenerator[str, None, None]:
-        try:
-            novel_file = open(fpath, "r", encoding="utf8")
-            for line in [line.strip() for line in novel_file.readlines()]:
+        with open(fpath, "r", encoding="utf8") as lines_file:
+            for line in lines_file.readlines():
+                yield line.strip()
+
+    def clean_sentences(
+        lines: TGenerator[str, None, None],
+    ) -> TGenerator[str, None, None]:
+        """
+        Given a list of sentences from some novel, which are language sequences
+        broken at sentence delimiters like "?" and ".", we still need to do some
+        additional cleaning. There are probably better libraries for this by now,
+        but for now this is just ad hoc cleaning. Lowercase and remove all
+        punctuation; this way the model will just learn language relations. It would
+        be nice to additionally tokenize with wordpieces after this step.
+        """
+        # FUTURE: leverage libraries or use string.punctuation and other builtins.
+        #
+        # TODO: it might be interesting to leave command and ending chars, to see
+        # how the model concludes with 'voice'.
+        characters_to_remove = "[.,!]()?\"“”'‘’`{}*:"
+        t_table = dict()
+        for c in characters_to_remove:
+            t_table[c] = None
+        # Some characters should be replaced with a space, like "-" in "and then—as
+        # I was saying—he went to the farm..."
+        t_table["—"] = " "
+        t_table["-"] = " "
+
+        t_table = str.maketrans(t_table)
+
+        for line in lines:
+            yield line.lower().translate(t_table)
+
+    return clean_sentences(read_lines())
+
+
+def read_novel_sentences(fpath: str) -> TGenerator[str, None, None]:
+    """
+    OBSOLETE: this was built specifically for Gutenberg's Huck Finn.
+
+    read_novel_sentences reads a novel-like file, which is any file
+    whose lines extend sentences over one or more lines, like the hucklberry
+    finn opensource novel.
+
+    Note that this is super inefficient, because in order to cleanly break on
+    lines, I concatenate all lines into a single string to break it on
+    delimiters. Hence this is not yet a useful per-line protocol and assumes a
+    modest file size.
+    """
+
+    def read_lines() -> TGenerator[str, None, None]:
+        with open(fpath, "r", encoding="utf8") as novel_file:
+            for line in (line.strip() for line in novel_file.readlines()):
                 if line and not line.startswith("CHAPTER"):
                     yield line
-        finally:
-            novel_file.close()
 
     def as_sentences(lines: TGenerator[str, None, None]) -> TGenerator[str, None, None]:
         # Common delimiters in huckfinn
@@ -2158,12 +2649,59 @@ def read_novel_sentences(fpath: str) -> TGenerator[str, None, None]:
     return clean_sentences(as_sentences(read_lines()))
 
 
-def get_novel_sentence_iters(
-    fpath: str, split: float = 0.8
+def get_line_iters(
+    fpath: str,
+    split: float = 0.8,
+    randomize: bool = True,
 ) -> Tuple[
     TGenerator[Tuple[str, str], None, None], TGenerator[Tuple[str, str], None, None]
 ]:
     """get_novel_sentence_iters returns a training and validation iterator over the
+    lines found in the passed fpath. Each line is treated as an example. Each
+    iterator iterates the lines as (line,line) pairs, where the first entry is
+    the input and second entry is the target. The lines are shuffled before
+    creating their iterators and will be randomly ordered. From fpath, read all
+    lines, splits on any of {!?.:}, preserving these at the end of sequences,
+    and yields each sentence in this manner as a tuple pair. The return type
+    just matches previous requirements, which were for translation tasks where
+    tuple (str,tgt) pairs were each in separate languages.
+
+    The lines are shuffled then split into train and validation/test.
+
+    This returns the sentences as-is, no additional parsing. The tokenizer will
+    take care of that, plus any other hooks to condition the text.
+    """
+    lines = list(read_line_sentences(fpath))
+
+    with open("train_lines.txt", "w+", encoding="utf8") as ofile:
+        ofile.writelines("\n".join(lines))
+
+    if randomize:
+        random.shuffle(lines)
+
+    splitIndex = int(len(lines) * split)
+    train_lines = lines[0:splitIndex]
+    val_lines = lines[splitIndex:]
+
+    if not train_lines or not val_lines:
+        raise ValueError(
+            f"Training lines ({len(train_lines)}) or val lines ({len(val_lines)}) empty for fpath={fpath}"
+        )
+
+    return ((line, line) for line in train_lines), ((line, line) for line in val_lines)
+
+
+def get_novel_sentence_iters(
+    fpath: str,
+    split: float = 0.8,
+    randomize: bool = True,
+) -> Tuple[
+    TGenerator[Tuple[str, str], None, None], TGenerator[Tuple[str, str], None, None]
+]:
+    """
+    OBSOLETE: remove this once completely on the per-line training input.
+
+    get_novel_sentence_iters returns a training and validation iterator over the
     lines found in the passed fpath. Each line is treated as an example. Each
     iterator iterates the lines as (line,line) pairs, where the first entry is
     the input and second entry is the target. The lines are shuffled before
@@ -2183,7 +2721,9 @@ def get_novel_sentence_iters(
         for line in lines:
             ofile.write(line + "\n")
 
-    random.shuffle(lines)
+    if randomize:
+        random.shuffle(lines)
+
     splitIndex = int(len(lines) * split)
     train_lines = lines[0:splitIndex]
     val_lines = lines[splitIndex:]
@@ -2192,6 +2732,103 @@ def get_novel_sentence_iters(
 
 
 def create_seq_dataloaders(
+    input_lines_path: str,
+    device: str,
+    vocab_src: Vocab,
+    spacy_en: Language,
+    batch_size: int = 12000,
+    max_padding: int = 128,
+    is_distributed: bool = True,
+    randomize: bool = True,
+) -> Tuple[DataLoader, DataLoader]:
+    """create_seq_dataloaders returns two date iterators for training and
+    validation, for which the training output is the same as the input, for
+    in-language prediction. Note that this returns src/tgt lines that are
+    index-aligned; Batch then takes offsets tgt by one position.
+
+    @input_lines_path: The path to a line-based training input. This function
+    chops the novel into sentences as training data, where the input sentence is
+    both the source and the target.
+
+    Objective: ensure that this function creates dataloaders the same as the
+    create_dataloaders method, and can load src/tgt examples for a single
+    language and text.
+
+    Creates and return sequential dataloaders, for which the source and target
+    sequences are identical, i.e. for prediction tasks.
+    """
+
+    # Returns tokenized text. Example:
+    # - in:  [token.text for token in  spacy_en.tokenizer("foo Bar")]
+    # - out: ['foo', 'Bar']
+    def tokenize_en(text: str) -> List[str]:
+        return [tok.text for tok in spacy_en.tokenizer(text)]
+
+    def collate_fn(batch):
+        """Satisfies the torch collate_fn_t interface: 'merges a list of samples
+        to form a mini-batch of Tensor(s).  Used when using batched loading from
+        a map-style dataset.'"""
+        return collate_batch(
+            batch,
+            tokenize_en,
+            tokenize_en,
+            vocab_src,
+            vocab_src,
+            device,
+            bs_id=vocab_src.get_stoi()["<s>"],
+            eos_id=vocab_src.get_stoi()["</s>"],
+            pad_id=vocab_src.get_stoi()["<blank>"],
+            max_padding=max_padding,
+        )
+
+    """
+    This is the spot at which text sequences are injected, and therefore the
+    point at which to modify the problem structure from translation, to
+    prediction, etc. The test_iter was unused in the original example code, so
+    I've omitted it here as well.
+
+    This matches the original call:
+        train_iter, valid_iter, test_iter = datasets.Multi30k(
+            language_pair=("de", "en"))
+
+    For which:
+            :return: DataPipe that yields tuple of source and target sentences
+        Number of lines per split: - train: 29000 - valid: 1014 - test: 1000
+
+    The original iterators (train_iter, valid_iter) yield tuples of (str,str),
+    for example: ('Zwei Chinesen stehen an einer Wandtafel.', 'Two chinese
+    people are standing by a chalkboard.')
+    """
+    train_iter, valid_iter = get_line_iters(input_lines_path, randomize=randomize)
+
+    train_iter_map = to_map_style_dataset(train_iter)
+    train_sampler = DistributedSampler(train_iter_map) if is_distributed else None
+    valid_iter_map = to_map_style_dataset(valid_iter)
+    valid_sampler = DistributedSampler(valid_iter_map) if is_distributed else None
+
+    # Data loader combines a dataset and a sampler, and provides an iterable
+    # over the given dataset. There is good DI here, this abstraction wraps all
+    # batching, sampling, and conversion from vocab to embedding vectors.
+    train_dataloader = DataLoader(
+        train_iter_map,
+        batch_size=batch_size,
+        shuffle=(train_sampler is None and randomize),
+        sampler=train_sampler,
+        collate_fn=collate_fn,
+    )
+
+    valid_dataloader = DataLoader(
+        valid_iter_map,
+        batch_size=batch_size,
+        shuffle=(valid_sampler is None and randomize),
+        sampler=valid_sampler,
+        collate_fn=collate_fn,
+    )
+
+    return train_dataloader, valid_dataloader
+
+
+def create_huckfinn_dataloaders(
     novel_path: str,
     device: str,
     vocab_src: Vocab,
@@ -2200,7 +2837,10 @@ def create_seq_dataloaders(
     max_padding: int = 128,
     is_distributed: bool = True,
 ) -> Tuple[DataLoader, DataLoader]:
-    """create_seq_dataloaders returns two date iterators for training and
+    """
+    OBSOLETE: this was for the Huck Finn loaders. Delete this once completely on per-line training.
+
+    create_seq_dataloaders returns two date iterators for training and
     validation, for which the training output is the same as the input, in other
     words in-language prediction.
 
@@ -2323,8 +2963,14 @@ def train_worker(
         f"Training params: pad_idx={pad_idx} vocab-len={len(vocab)}\nconfig={config.model_dump_json(indent=2)}"
     )
 
-    model = make_model(len(vocab), len(vocab), N=num_layers, d_model=d_model)
-    module = model
+    model = make_encdec_model(
+        len(vocab),
+        len(vocab),
+        N=num_layers,
+        d_model=d_model,
+        h=config.h,
+        dropout=config.dropout,
+    )
     is_main_process = True
 
     # LabelSmoothing provides regularization. See and run
@@ -2358,7 +3004,7 @@ def train_worker(
         train_loss, train_state = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in train_dataloader),
             model,
-            SimpleLossCompute(module.generator, criterion),
+            SimpleLossCompute(model.generator, criterion),
             optimizer,
             lr_scheduler,
             mode="train+log",
@@ -2366,7 +3012,6 @@ def train_worker(
             train_state=train_state,
         )
         log.info("Epoch %d training loss: %f", epoch, train_loss)
-
         torch.cuda.empty_cache()
 
         log.info(f"Epoch {epoch} Validation ====")
@@ -2374,7 +3019,7 @@ def train_worker(
         validation_loss, _ = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in valid_dataloader),
             model,
-            SimpleLossCompute(module.generator, criterion),
+            SimpleLossCompute(model.generator, criterion),
             DummyOptimizer(),
             DummyScheduler(),
             mode="eval",
@@ -2387,17 +3032,16 @@ def train_worker(
             ),
             model,
         )
-        exit()
 
     if is_main_process:
-        torch.save(module.state_dict(), f"{config.file_prefix}_final.pt")
+        torch.save(model.state_dict(), f"{config.file_prefix}_final.pt")
 
     print(f"{num_epochs} epochs completed")
 
     return model
 
 
-def my_load_trained_model(
+def load_trained_model(
     src_vocab_size: int, tgt_vocab_size: int, config: TransformerConfig
 ):
     """load_trained_model creates a model and loads its trained weights from file
@@ -2409,7 +3053,7 @@ def my_load_trained_model(
     if not Path(config.model_path).exists():
         raise Exception(f"Model path not found: {config.model_path}")
 
-    model = make_model(
+    model = make_encdec_model(
         src_vocab_size,
         tgt_vocab_size,
         N=config.num_layers,
@@ -2446,7 +3090,6 @@ def check_outputs(
     max_len=72,
     beam_len=1,
 ):
-    global log
     results = [()] * n_examples
     for idx in range(n_examples):
         log.info("\nExample %d ========\n" % idx)
@@ -2473,7 +3116,13 @@ def check_outputs(
         #     vocab_src["<s>"],
         # )
         ys = beam_decode(
-            model, rb.src, rb.src_mask, max_len, vocab_src["<s>"], beam_length=beam_len
+            model,
+            rb.src,
+            rb.src_mask,
+            max_len,
+            vocab_src["<s>"],
+            beam_length=beam_len,
+            pad_id=pad_idx,
         )
 
         model_out = ys[0]
@@ -2510,7 +3159,7 @@ def run_model_example(n_examples=5):
 
     log.info("Loading Trained Model ...")
 
-    model = make_model(len(vocab_src), len(vocab_tgt), N=6)
+    model = make_encdec_model(len(vocab_src), len(vocab_tgt), N=6)
     model.load_state_dict(
         torch.load("multi30k_model_final.pt", map_location=torch.device("cpu"))
     )

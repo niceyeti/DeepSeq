@@ -91,15 +91,19 @@ Beginning training with {args.config} config:
     # TODO: add a max sequence length parameter. The model has a fixed max input
     # size of 512 tokens, and sentences need to be truncated to that length or
     # omitted if too long.
-    train_iter, val_iter = architecture.get_novel_sentence_iters(config.data_path)
+    train_iter, val_iter = architecture.get_line_iters(config.data_path)
 
-    vocab = architecture.build_en_vocabulary(train_iter, val_iter, spacy_en)
+    vocab = architecture.build_en_vocabulary(
+        train_iter, val_iter, spacy_en, min_frequency=1
+    )
 
     architecture.save_vocab(vocab, f"{config.file_prefix}.pth")
 
     loss_path = Path(f"{config.file_prefix}.loss")
     # zero the existing loss file
     loss_path.write_text("", encoding="utf8", newline="")
+
+    only_once = os.environ.get("ONCE", "") != ""
 
     def persist_epoch(metrics: EpochMetrics, model: EncoderDecoderModel):
         """persist_epoch saves the metrics for the epoch to file so that once
@@ -128,6 +132,12 @@ Beginning training with {args.config} config:
         # losses on file, or the new metrics would be in the compared set.
         with open(loss_path, "a+", encoding="utf8") as loss_file:
             loss_file.write(metrics.model_dump_json(indent=None) + "\n")
+
+        if only_once:
+            # For debugging, it is often useful to max the log level and bail
+            # after a single iteration, to review tensor size agreement, etc.
+            log.info("ONCE passed, exiting after a single iteration.")
+            exit(1)
 
     try:
         architecture.train_worker(vocab, spacy_en, config, report_epoch=persist_epoch)

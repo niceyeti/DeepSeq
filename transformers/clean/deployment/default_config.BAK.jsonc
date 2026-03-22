@@ -1,19 +1,22 @@
+// A backup of the default config, for a backup, with parameter values from the
+// original transformer paper. This will inevitably go out of date and is here
+// for reference.
 {
     // The batch size for training
     "batch_size": 32,
     // Whether or not training is distributed
     "distributed": false,
     // The number of epochs for which to train, as a static value.
-    "num_epochs": 150,
+    "num_epochs": 130,
     // Number of iterations to accumulate weight updates.
     "accum_iter": 10,
     // The number of layers, 6 in the original paper. The encoder and decoder will
     // each have this number of layers.
     "num_layers": 6,
     // The model dimension, 512 in the original paper.
-    "d_model": 256,
+    "d_model": 512,
     "dropout": 0.1,
-    // The dimenson of the feed-forward network appended to each attention
+    // The dimension of the feed-forward network appended to each attention
     // encoder/decoder layer.
     "d_ff": 2048,
     // The number of heads in multi-headed attention components.
@@ -26,11 +29,11 @@
     "warmup": 3000,
     // The prefix by which models will be persisted and read back in. Model
     // progress is saved at each epoch in a pt file with this prefix.
-    "file_prefix": "../attn/huckfinn",
-    // model_path is the path to a final .pt torch-model file.
-    "model_path": "../attn/huckfinn_final.pt",
+    "file_prefix": "./models/test/fb_news",
     // The training data path.
-    "data_path": "../attn/data/huckfinn_utf8.txt",
+    "data_path": "./data/fb_lines.txt",
+    // The name of the trained model, once completed.
+    "model_path": "./models/test/fb_news_best.pt",
     // The device: either "gpu" or "cpu" only. See torch docs.
     "device": "cpu"
 }

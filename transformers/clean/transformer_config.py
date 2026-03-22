@@ -63,7 +63,9 @@ class TransformerConfig(BaseModel):
     # The prefix by which models will be persisted and read back in. Model
     # progress is saved at each epoch in a pt file with this prefix.
     file_prefix: str = "./models/test/fb_news"
-    # The training data path.
+    # The training data path. Currently I am tending toward a standard of
+    # line-based training examples, since this is most amenable to tooling and
+    # makes the user responsible for a degree of preprocessing.
     data_path: str = "./data/fb_lines.txt"
     # The path to a saved model. This is only used in inference/prod to load
     # a saved model.
@@ -118,5 +120,14 @@ class TransformerConfig(BaseModel):
                     if not line.strip().startswith("//")
                 ]
             )
+
         config: TransformerConfig = TransformerConfig.model_validate_json(config_json)
-        return config.read_from_env()
+        config = config.read_from_env()
+
+        # Theres probably a better pydantic way to validate this
+        if config.d_model % config.h:
+            raise ValueError(
+                f"d_model % h must be zero, but got d_model={config.d_model} h={config.h}. H must divide d_model into even portions."
+            )
+
+        return config

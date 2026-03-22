@@ -1,0 +1,278 @@
+source .venv/bin/activate && \
+BEAM_LENGTH=30 \
+LOG_LEVEL=INFO \
+	python check_outputs_driver.py -c ./deployment/default_config.jsonc
+/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torchtext/data/__init__.py:4: UserWarning: 
+/!\ IMPORTANT WARNING ABOUT TORCHTEXT STATUS /!\ 
+Torchtext is deprecated and the last released version will be 0.18 (this one). You can silence this warning by calling the following at the beginnign of your scripts: `import torchtext; torchtext.disable_torchtext_deprecation_warning()`
+  warnings.warn(torchtext._TORCHTEXT_DEPRECATION_MSG)
+/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torchtext/vocab/__init__.py:4: UserWarning: 
+/!\ IMPORTANT WARNING ABOUT TORCHTEXT STATUS /!\ 
+Torchtext is deprecated and the last released version will be 0.18 (this one). You can silence this warning by calling the following at the beginnign of your scripts: `import torchtext; torchtext.disable_torchtext_deprecation_warning()`
+  warnings.warn(torchtext._TORCHTEXT_DEPRECATION_MSG)
+/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torchtext/utils.py:4: UserWarning: 
+/!\ IMPORTANT WARNING ABOUT TORCHTEXT STATUS /!\ 
+Torchtext is deprecated and the last released version will be 0.18 (this one). You can silence this warning by calling the following at the beginnign of your scripts: `import torchtext; torchtext.disable_torchtext_deprecation_warning()`
+  warnings.warn(torchtext._TORCHTEXT_DEPRECATION_MSG)
+/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torchtext/datasets/__init__.py:4: UserWarning: 
+/!\ IMPORTANT WARNING ABOUT TORCHTEXT STATUS /!\ 
+Torchtext is deprecated and the last released version will be 0.18 (this one). You can silence this warning by calling the following at the beginnign of your scripts: `import torchtext; torchtext.disable_torchtext_deprecation_warning()`
+  warnings.warn(torchtext._TORCHTEXT_DEPRECATION_MSG)
+INFO:root:########################################################################
+Beginning check-outputs with deployment/default_config.jsonc config:
+{
+    "batch_size": 64,
+    "distributed": false,
+    "num_epochs": 130,
+    "accum_iter": 10,
+    "num_layers": 6,
+    "d_model": 512,
+    "dropout": 0.1,
+    "d_ff": 2048,
+    "h": 8,
+    "base_lr": 1.0,
+    "max_padding": 72,
+    "warmup": 3000,
+    "file_prefix": "./models/test/fb_news",
+    "data_path": "./data/fb_lines.txt",
+    "model_path": "./models/test/fb_news_best.pt",
+    "device": "cpu",
+    "beam_length": 30
+}
+########################################################################
+
+INFO:root:Model loaded from ./models/test/fb_news_best.pt. Make sure you call model.eval() and 'with torch.no_grad()'.
+INFO:root:Model loaded from ./models/test/fb_news_best.pt
+INFO:root:
+Example 0 ========
+
+INFO:root:>> rb.src=tensor([[   0,  251,  556,  ...,    2,    2,    2],
+        [   0,    6, 1318,  ...,    2,    2,    2],
+        [   0, 3276, 5789,  ...,    2,    2,    2],
+        ...,
+        [   0,    4,   19,  ...,    2,    2,    2],
+        [   0, 1336, 1475,  ...,    2,    2,    2],
+        [   0,  334,  261,  ...,    2,    2,    2]]) rb.src.size()=torch.Size([64, 72]) rb.src_mask.size()=torch.Size([64, 1, 72])
+INFO:root:Source Text (Input)        : <s> wynn resorts will pay $ 2 6 billion to settle litigation with a company that at one time held a 20 % stake in the casino giant but was forced by wynn in 2012 to give up its shares </s>
+INFO:root:Target Text (Ground Truth) : <s> wynn resorts will pay $ 2 6 billion to settle litigation with a company that at one time held a 20 % stake in the casino giant but was forced by wynn in 2012 to give up its shares </s>
+INFO:root:encdec encoder layer: src.size()=torch.Size([64, 72]) src_mask.size()=torch.Size([64, 1, 72])
+INFO:root:Encoder.forward: x=torch.Size([64, 72, 512])   mask=torch.Size([64, 1, 72])
+INFO:root:EncoderLayer forward:  x dim torch.Size([64, 72, 512])  mask dim torch.Size([64, 1, 72])
+INFO:root:encoder-self-attn  W_q=torch.Size([512, 512]) query=torch.Size([64, 72, 512]) nbatches=64 d_k=64
+INFO:root:encoder-self-attn  Wq=torch.Size([64, 72, 512])  q_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  query=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  W_k=torch.Size([512, 512]) key=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wk=torch.Size([64, 72, 512])  k_out=torch.Size([64, 72, 8, 64]) (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))
+INFO:root:encoder-self-attn  key=torch.Size([64, 8, 72, 64]) (via k_out.transpose(1, 2))
+INFO:root:encoder-self-attn  W_v=torch.Size([512, 512]) value=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wv=torch.Size([64, 72, 512])  v_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  value=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  In attn: d_k=64 q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=k.transpose(-2,-1)=torch.Size([64, 8, 64, 72]) mask=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=torch.Size([64, 8, 64, 72]) v=torch.Size([64, 8, 72, 64])  scores=torch.Size([64, 8, 72, 72]) mask=torch.Size([64, 1, 1, 72]) mask_old_shape=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  x=torch.Size([64, 8, 72, 64]) self.attn=torch.Size([64, 8, 72, 72])
+INFO:root:encoder-self-attn  x reshaped=torch.Size([64, 72, 512]) final_out=torch.Size([64, 72, 512])
+INFO:root:encoder x dim: torch.Size([64, 72, 512])
+INFO:root:Encoder x_final dim: torch.Size([64, 72, 512])
+INFO:root:EncoderLayer forward:  x dim torch.Size([64, 72, 512])  mask dim torch.Size([64, 1, 72])
+INFO:root:encoder-self-attn  W_q=torch.Size([512, 512]) query=torch.Size([64, 72, 512]) nbatches=64 d_k=64
+INFO:root:encoder-self-attn  Wq=torch.Size([64, 72, 512])  q_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  query=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  W_k=torch.Size([512, 512]) key=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wk=torch.Size([64, 72, 512])  k_out=torch.Size([64, 72, 8, 64]) (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))
+INFO:root:encoder-self-attn  key=torch.Size([64, 8, 72, 64]) (via k_out.transpose(1, 2))
+INFO:root:encoder-self-attn  W_v=torch.Size([512, 512]) value=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wv=torch.Size([64, 72, 512])  v_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  value=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  In attn: d_k=64 q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=k.transpose(-2,-1)=torch.Size([64, 8, 64, 72]) mask=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=torch.Size([64, 8, 64, 72]) v=torch.Size([64, 8, 72, 64])  scores=torch.Size([64, 8, 72, 72]) mask=torch.Size([64, 1, 1, 72]) mask_old_shape=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  x=torch.Size([64, 8, 72, 64]) self.attn=torch.Size([64, 8, 72, 72])
+INFO:root:encoder-self-attn  x reshaped=torch.Size([64, 72, 512]) final_out=torch.Size([64, 72, 512])
+INFO:root:encoder x dim: torch.Size([64, 72, 512])
+INFO:root:Encoder x_final dim: torch.Size([64, 72, 512])
+INFO:root:EncoderLayer forward:  x dim torch.Size([64, 72, 512])  mask dim torch.Size([64, 1, 72])
+INFO:root:encoder-self-attn  W_q=torch.Size([512, 512]) query=torch.Size([64, 72, 512]) nbatches=64 d_k=64
+INFO:root:encoder-self-attn  Wq=torch.Size([64, 72, 512])  q_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  query=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  W_k=torch.Size([512, 512]) key=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wk=torch.Size([64, 72, 512])  k_out=torch.Size([64, 72, 8, 64]) (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))
+INFO:root:encoder-self-attn  key=torch.Size([64, 8, 72, 64]) (via k_out.transpose(1, 2))
+INFO:root:encoder-self-attn  W_v=torch.Size([512, 512]) value=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wv=torch.Size([64, 72, 512])  v_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  value=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  In attn: d_k=64 q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=k.transpose(-2,-1)=torch.Size([64, 8, 64, 72]) mask=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=torch.Size([64, 8, 64, 72]) v=torch.Size([64, 8, 72, 64])  scores=torch.Size([64, 8, 72, 72]) mask=torch.Size([64, 1, 1, 72]) mask_old_shape=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  x=torch.Size([64, 8, 72, 64]) self.attn=torch.Size([64, 8, 72, 72])
+INFO:root:encoder-self-attn  x reshaped=torch.Size([64, 72, 512]) final_out=torch.Size([64, 72, 512])
+INFO:root:encoder x dim: torch.Size([64, 72, 512])
+INFO:root:Encoder x_final dim: torch.Size([64, 72, 512])
+INFO:root:EncoderLayer forward:  x dim torch.Size([64, 72, 512])  mask dim torch.Size([64, 1, 72])
+INFO:root:encoder-self-attn  W_q=torch.Size([512, 512]) query=torch.Size([64, 72, 512]) nbatches=64 d_k=64
+INFO:root:encoder-self-attn  Wq=torch.Size([64, 72, 512])  q_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  query=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  W_k=torch.Size([512, 512]) key=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wk=torch.Size([64, 72, 512])  k_out=torch.Size([64, 72, 8, 64]) (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))
+INFO:root:encoder-self-attn  key=torch.Size([64, 8, 72, 64]) (via k_out.transpose(1, 2))
+INFO:root:encoder-self-attn  W_v=torch.Size([512, 512]) value=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wv=torch.Size([64, 72, 512])  v_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  value=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  In attn: d_k=64 q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=k.transpose(-2,-1)=torch.Size([64, 8, 64, 72]) mask=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=torch.Size([64, 8, 64, 72]) v=torch.Size([64, 8, 72, 64])  scores=torch.Size([64, 8, 72, 72]) mask=torch.Size([64, 1, 1, 72]) mask_old_shape=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  x=torch.Size([64, 8, 72, 64]) self.attn=torch.Size([64, 8, 72, 72])
+INFO:root:encoder-self-attn  x reshaped=torch.Size([64, 72, 512]) final_out=torch.Size([64, 72, 512])
+INFO:root:encoder x dim: torch.Size([64, 72, 512])
+INFO:root:Encoder x_final dim: torch.Size([64, 72, 512])
+INFO:root:EncoderLayer forward:  x dim torch.Size([64, 72, 512])  mask dim torch.Size([64, 1, 72])
+INFO:root:encoder-self-attn  W_q=torch.Size([512, 512]) query=torch.Size([64, 72, 512]) nbatches=64 d_k=64
+INFO:root:encoder-self-attn  Wq=torch.Size([64, 72, 512])  q_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  query=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  W_k=torch.Size([512, 512]) key=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wk=torch.Size([64, 72, 512])  k_out=torch.Size([64, 72, 8, 64]) (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))
+INFO:root:encoder-self-attn  key=torch.Size([64, 8, 72, 64]) (via k_out.transpose(1, 2))
+INFO:root:encoder-self-attn  W_v=torch.Size([512, 512]) value=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wv=torch.Size([64, 72, 512])  v_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  value=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  In attn: d_k=64 q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=k.transpose(-2,-1)=torch.Size([64, 8, 64, 72]) mask=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=torch.Size([64, 8, 64, 72]) v=torch.Size([64, 8, 72, 64])  scores=torch.Size([64, 8, 72, 72]) mask=torch.Size([64, 1, 1, 72]) mask_old_shape=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  x=torch.Size([64, 8, 72, 64]) self.attn=torch.Size([64, 8, 72, 72])
+INFO:root:encoder-self-attn  x reshaped=torch.Size([64, 72, 512]) final_out=torch.Size([64, 72, 512])
+INFO:root:encoder x dim: torch.Size([64, 72, 512])
+INFO:root:Encoder x_final dim: torch.Size([64, 72, 512])
+INFO:root:EncoderLayer forward:  x dim torch.Size([64, 72, 512])  mask dim torch.Size([64, 1, 72])
+INFO:root:encoder-self-attn  W_q=torch.Size([512, 512]) query=torch.Size([64, 72, 512]) nbatches=64 d_k=64
+INFO:root:encoder-self-attn  Wq=torch.Size([64, 72, 512])  q_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  query=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  W_k=torch.Size([512, 512]) key=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wk=torch.Size([64, 72, 512])  k_out=torch.Size([64, 72, 8, 64]) (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))
+INFO:root:encoder-self-attn  key=torch.Size([64, 8, 72, 64]) (via k_out.transpose(1, 2))
+INFO:root:encoder-self-attn  W_v=torch.Size([512, 512]) value=torch.Size([64, 72, 512]) nbatches=64
+INFO:root:encoder-self-attn  Wv=torch.Size([64, 72, 512])  v_out=torch.Size([64, 72, 8, 64])
+INFO:root:encoder-self-attn  value=torch.Size([64, 8, 72, 64])
+INFO:root:encoder-self-attn  In attn: d_k=64 q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=k.transpose(-2,-1)=torch.Size([64, 8, 64, 72]) mask=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  q=torch.Size([64, 8, 72, 64]) k=torch.Size([64, 8, 72, 64]) k_t=torch.Size([64, 8, 64, 72]) v=torch.Size([64, 8, 72, 64])  scores=torch.Size([64, 8, 72, 72]) mask=torch.Size([64, 1, 1, 72]) mask_old_shape=torch.Size([64, 1, 1, 72])
+INFO:root:encoder-self-attn  x=torch.Size([64, 8, 72, 64]) self.attn=torch.Size([64, 8, 72, 72])
+INFO:root:encoder-self-attn  x reshaped=torch.Size([64, 72, 512]) final_out=torch.Size([64, 72, 512])
+INFO:root:encoder x dim: torch.Size([64, 72, 512])
+INFO:root:Encoder x_final dim: torch.Size([64, 72, 512])
+INFO:root:memory.size()=torch.Size([64, 72, 512]), src=torch.Size([64, 72]) src_mask=torch.Size([64, 1, 72])
+INFO:root:encdec decoder layer: memory.size()=torch.Size([64, 72, 512]) src_mask.size()=torch.Size([64, 1, 72]) tgt.size()=torch.Size([1, 1]) tgt_mask.size()=torch.Size([1, 1, 1])
+INFO:root:Decoder.forward  x=torch.Size([1, 1, 512])  memory=torch.Size([64, 72, 512])  src_mask=torch.Size([64, 1, 72]) tgt_mask=Ptorch.Size([1, 1, 1])
+INFO:root:decoder-masked-attn  W_q=torch.Size([512, 512]) query=torch.Size([1, 1, 512]) nbatches=1 d_k=64
+INFO:root:decoder-masked-attn  Wq=torch.Size([1, 1, 512])  q_out=torch.Size([1, 1, 8, 64])
+INFO:root:decoder-masked-attn  query=torch.Size([1, 8, 1, 64])
+INFO:root:decoder-masked-attn  W_k=torch.Size([512, 512]) key=torch.Size([1, 1, 512]) nbatches=1
+INFO:root:decoder-masked-attn  Wk=torch.Size([1, 1, 512])  k_out=torch.Size([1, 1, 8, 64]) (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))
+INFO:root:decoder-masked-attn  key=torch.Size([1, 8, 1, 64]) (via k_out.transpose(1, 2))
+INFO:root:decoder-masked-attn  W_v=torch.Size([512, 512]) value=torch.Size([1, 1, 512]) nbatches=1
+INFO:root:decoder-masked-attn  Wv=torch.Size([1, 1, 512])  v_out=torch.Size([1, 1, 8, 64])
+INFO:root:decoder-masked-attn  value=torch.Size([1, 8, 1, 64])
+INFO:root:decoder-masked-attn  In attn: d_k=64 q=torch.Size([1, 8, 1, 64]) k=torch.Size([1, 8, 1, 64]) k_t=k.transpose(-2,-1)=torch.Size([1, 8, 64, 1]) mask=torch.Size([1, 1, 1, 1])
+INFO:root:decoder-masked-attn  q=torch.Size([1, 8, 1, 64]) k=torch.Size([1, 8, 1, 64]) k_t=torch.Size([1, 8, 64, 1]) v=torch.Size([1, 8, 1, 64])  scores=torch.Size([1, 8, 1, 1]) mask=torch.Size([1, 1, 1, 1]) mask_old_shape=torch.Size([1, 1, 1, 1])
+INFO:root:decoder-masked-attn  x=torch.Size([1, 8, 1, 64]) self.attn=torch.Size([1, 8, 1, 1])
+INFO:root:decoder-masked-attn  x reshaped=torch.Size([1, 1, 512]) final_out=torch.Size([1, 1, 512])
+INFO:root:decoder-srctgt-attn  W_q=torch.Size([512, 512]) query=torch.Size([1, 1, 512]) nbatches=1 d_k=64
+INFO:root:decoder-srctgt-attn  Wq=torch.Size([1, 1, 512])  q_out=torch.Size([1, 1, 8, 64])
+INFO:root:decoder-srctgt-attn  query=torch.Size([1, 8, 1, 64])
+INFO:root:decoder-srctgt-attn  W_k=torch.Size([512, 512]) key=torch.Size([64, 72, 512]) nbatches=1
+INFO:root:decoder-srctgt-attn  Wk=torch.Size([64, 72, 512])  k_out=torch.Size([1, 4608, 8, 64]) (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))
+INFO:root:decoder-srctgt-attn  key=torch.Size([1, 8, 4608, 64]) (via k_out.transpose(1, 2))
+INFO:root:decoder-srctgt-attn  W_v=torch.Size([512, 512]) value=torch.Size([64, 72, 512]) nbatches=1
+INFO:root:decoder-srctgt-attn  Wv=torch.Size([64, 72, 512])  v_out=torch.Size([1, 4608, 8, 64])
+INFO:root:decoder-srctgt-attn  value=torch.Size([1, 8, 4608, 64])
+INFO:root:decoder-srctgt-attn  In attn: d_k=64 q=torch.Size([1, 8, 1, 64]) k=torch.Size([1, 8, 4608, 64]) k_t=k.transpose(-2,-1)=torch.Size([1, 8, 64, 4608]) mask=torch.Size([64, 1, 1, 72])
+ERROR:root:MASK MODIFICATION decoder-srctgt-attn  mask size torch.Size([64, 1, 1, 72]) != scores size torch.Size([1, 8, 1, 4608]), reshaped to torch.Size([1, 1, 1, 4608]). This is currently needed during inference because ys has no batch dim.
+================================================================================
+Layer (type:depth-idx)                                  Param #
+================================================================================
+EncoderDecoderModel                                     --
+├─Encoder: 1-1                                          --
+│    └─ModuleList: 2-1                                  --
+│    │    └─EncoderLayer: 3-1                           3,152,384
+│    │    └─EncoderLayer: 3-2                           3,152,384
+│    │    └─EncoderLayer: 3-3                           3,152,384
+│    │    └─EncoderLayer: 3-4                           3,152,384
+│    │    └─EncoderLayer: 3-5                           3,152,384
+│    │    └─EncoderLayer: 3-6                           3,152,384
+│    └─LayerNorm: 2-2                                   1,024
+├─Decoder: 1-2                                          --
+│    └─ModuleList: 2-3                                  --
+│    │    └─DecoderLayer: 3-7                           4,204,032
+│    │    └─DecoderLayer: 3-8                           4,204,032
+│    │    └─DecoderLayer: 3-9                           4,204,032
+│    │    └─DecoderLayer: 3-10                          4,204,032
+│    │    └─DecoderLayer: 3-11                          4,204,032
+│    │    └─DecoderLayer: 3-12                          4,204,032
+│    └─LayerNorm: 2-4                                   1,024
+├─Sequential: 1-3                                       --
+│    └─Embeddings: 2-5                                  --
+│    │    └─Embedding: 3-13                             3,239,936
+│    └─PositionalEncoding: 2-6                          --
+│    │    └─Dropout: 3-14                               --
+├─Sequential: 1-4                                       --
+│    └─Embeddings: 2-7                                  --
+│    │    └─Embedding: 3-15                             3,239,936
+│    └─PositionalEncoding: 2-8                          --
+│    │    └─Dropout: 3-16                               --
+├─Generator: 1-5                                        --
+│    └─Linear: 2-9                                      3,246,264
+================================================================================
+Total params: 53,866,680
+Trainable params: 53,866,680
+Non-trainable params: 0
+================================================================================
+Traceback (most recent call last):
+  File "/workspaces/DeepSeq/transformers/clean/check_outputs_driver.py", line 99, in <module>
+    main()
+  File "/workspaces/DeepSeq/transformers/clean/check_outputs_driver.py", line 86, in main
+    architecture.check_outputs(
+  File "/workspaces/DeepSeq/transformers/clean/architecture.py", line 3082, in check_outputs
+    ys = beam_decode(
+         ^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/architecture.py", line 1879, in beam_decode
+    out = model.decode(memory, src_mask, beam_item.ys, ys_mask)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/architecture.py", line 437, in decode
+    out = self.decoder(self.tgt_embed(tgt), memory, src_mask, tgt_mask)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/architecture.py", line 191, in forward
+    x = layer(x, memory, src_mask, tgt_mask)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/architecture.py", line 243, in forward
+    src_attn = self.sublayer[1](
+               ^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/architecture.py", line 134, in forward
+    return x + self.dropout(sublayer(self.norm(x)))
+                            ^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/architecture.py", line 244, in <lambda>
+    masked_tgt_attn, lambda src: self.src_attn(src, memory, memory, src_mask)
+                                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1532, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/.venv/lib/python3.12/site-packages/torch/nn/modules/module.py", line 1541, in _call_impl
+    return forward_call(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/architecture.py", line 1063, in forward
+    x, self.attn = attention(
+                   ^^^^^^^^^^
+  File "/workspaces/DeepSeq/transformers/clean/architecture.py", line 694, in attention
+    raise ValueError(
+ValueError: Exiting. Review the previous error and sizes to understand why the obsolete mask view() call was required.
+make: *** [Makefile:90: check-outputs] Error 1
