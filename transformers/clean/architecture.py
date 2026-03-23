@@ -172,55 +172,6 @@ class EncoderLayer(nn.Module):
         return x_final
 
 
-class Decoder(nn.Module):
-    """Generic N layer decoder with masking."""
-
-    def __init__(self, layer, N):
-        super(Decoder, self).__init__()
-        self.layers = clones(layer, N)
-        self.norm = LayerNorm(layer.size)
-
-    def forward(self, x, memory, src_mask, tgt_mask):
-        """forward
-
-        Args:
-            * x: tensor of size (b x (seq_len-1) x d_model)
-            * memory: tensor of size (b x seq_len x d_model) taken from the
-              final encoder output for seq2seq transformer models
-            * src_mask: tensor of size (b x 1 x seq_len)
-            * tgt_mask: tensor of size (b v (seq_len-1) x (seq_len-1))
-        """
-
-        log.info(
-            f"Decoder.forward  x={x.size()}  memory={memory.size()}  src_mask={src_mask.size()} tgt_mask=P{tgt_mask.size()}"
-        )
-
-        for layer in self.layers:
-            x = layer(x, memory, src_mask, tgt_mask)
-        return self.norm(x)
-
-
-class DecoderOnly(nn.Module):
-    """DecoderOnly is just the counterpart to Decoder, for mnemonic-sake.
-    A block of plain decoders without an encoder (aka "memory") input or
-    src-mask only takes the x input and target mask.
-
-    TODO: rename "DecoderOnly*" classes once these factor out well. These were
-    named simply to distinguish them from the original Decoder classes built for
-    the encoder-decoder model, but these need less-weird names.
-    """
-
-    def __init__(self, layer, N):
-        super(DecoderOnly, self).__init__()
-        self.layers = clones(layer, N)
-        self.norm = LayerNorm(layer.size)
-
-    def forward(self, x, tgt_mask):
-        for layer in self.layers:
-            x = layer(x, tgt_mask)
-        return self.norm(x)
-
-
 class DecoderLayer(nn.Module):
     "Decoder is made of self-attn, src-attn, and feed forward (defined below)"
 
@@ -255,6 +206,34 @@ class DecoderLayer(nn.Module):
         return self.sublayer[2](src_attn, self.feed_forward)
 
 
+class Decoder(nn.Module):
+    """Generic N layer decoder with masking."""
+
+    def __init__(self, layer: DecoderLayer, N: int):
+        super(Decoder, self).__init__()
+        self.layers = clones(layer, N)
+        self.norm = LayerNorm(layer.size)
+
+    def forward(self, x, memory, src_mask, tgt_mask):
+        """forward
+
+        Args:
+            * x: tensor of size (b x (seq_len-1) x d_model)
+            * memory: tensor of size (b x seq_len x d_model) taken from the
+              final encoder output for seq2seq transformer models
+            * src_mask: tensor of size (b x 1 x seq_len)
+            * tgt_mask: tensor of size (b v (seq_len-1) x (seq_len-1))
+        """
+
+        log.info(
+            f"Decoder.forward  x={x.size()}  memory={memory.size()}  src_mask={src_mask.size()} tgt_mask=P{tgt_mask.size()}"
+        )
+
+        for layer in self.layers:
+            x = layer(x, memory, src_mask, tgt_mask)
+        return self.norm(x)
+
+
 class DecoderOnlyLayer(nn.Module):
     """DecoderOnlyLayer is identical to DecoderLayer but omits the src-mask and
     encoder input. This layer definition is solely for decoder-only models, and
@@ -280,6 +259,27 @@ class DecoderOnlyLayer(nn.Module):
         # Finally, run the encoded target through the feed forward layer before
         # adding/norming a final time through the sublayer.
         return self.sublayer[1](x, self.feed_forward)
+
+
+class DecoderOnly(nn.Module):
+    """DecoderOnly is just the counterpart to Decoder, for mnemonic-sake.
+    A block of plain decoders without an encoder (aka "memory") input or
+    src-mask only takes the x input and target mask.
+
+    TODO: rename "DecoderOnly*" classes once these factor out well. These were
+    named simply to distinguish them from the original Decoder classes built for
+    the encoder-decoder model, but these need less-weird names.
+    """
+
+    def __init__(self, layer: DecoderOnlyLayer, N: int):
+        super(DecoderOnly, self).__init__()
+        self.layers = clones(layer, N)
+        self.norm = LayerNorm(layer.size)
+
+    def forward(self, x, tgt_mask):
+        for layer in self.layers:
+            x = layer(x, tgt_mask)
+        return self.norm(x)
 
 
 # NOTE: under construction. I need to revisit this later, as I've kludged the connections
@@ -339,9 +339,12 @@ class DecoderModel(nn.Module):
     def decode(self, tgt, tgt_mask):
         """decode runs the entire decoder layers.
 
-        @tgt: size varies according to how much previous context (previous words, 'c') is loaded, (1 x c)
-        @tgt_mask: size is coupled to tgt size, and is a triangular matrix whose elements above the diagonal are true.
-          The size per @tgt is (1 x c x c)
+        Args:
+            * tgt: size varies according to how much previous context (previous
+              words, 'c') is loaded, (1 x c).
+            * tgt_mask: size is coupled to tgt size, and is a triangular matrix
+              whose elements above the diagonal are true. The size per @tgt is
+              (1 x c x c).
         """
         # global log
         log.info(
