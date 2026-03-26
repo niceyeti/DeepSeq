@@ -53,22 +53,41 @@ class DummyScheduler:
 
 
 class Generator(nn.Module):
-    "Generator defines a standard linear + softmax generation step."
+    """Generator defines a standard linear + softmax generation step. The
+    Generator takes a tensor of size (b x seqlen x d_model) and returns one of
+    size (b x seqlen x vocab_size), where the (seqlen x vocab_size) component is
+    a sequence of softmax outputs, one softmax multiclass output for every
+    seqlen index, representing the term distribution of each position.
+    """
 
-    def __init__(self, d_model: int, vocab):
+    def __init__(self, d_model: int, vocab: int):
         super(Generator, self).__init__()
         self.proj = nn.Linear(d_model, vocab)
 
     def forward(self, x):
-        """forward supports inference at production time, after training. This
-        is called to project the output of the trained model and subsequently
-        run through log-softmax.
+        """forward supports inference at production time, after training, and
+        loss calcs during training. This is called to project the output of the
+        trained model and subsequently run through log-softmax. Ignoring the
+        leading batch dimension, the linear projection map is size (d_model x
+        vocab), thus projecting (seqlen x d_model) * (d_model x vocab) to
+        (seqlen x vocab). Thus forward returns a softmax multiclass output for
+        every token in the sequence.
 
         Args:
-            * x: a tensor of size ()
-        """
+            * x: a tensor of size (b x seqlen x d_model)
 
-        return log_softmax(self.proj(x), dim=-1)
+        Returns: a tensor of size (b x seqlen x vocab). Ignoring the batch, the
+        tensor is a sequence of seqlen containing softmax outputs representing
+        every word in the vocab.
+        """
+        proj_x = self.proj(x)
+        log_softmax_x = log_softmax(proj_x, dim=-1)
+
+        log.info(
+            f"generator: x={x.size()}  proj_x={proj_x.size()} log_softmax_x={log_softmax_x.size()}"
+        )
+
+        return log_softmax_x
 
 
 def clones(module, N):
@@ -435,11 +454,13 @@ class EncoderDecoderModel(nn.Module):
     def decode(self, memory, src_mask, tgt, tgt_mask):
         """decode runs the entire decoder layers, taking the encoder's final output as its initial input.
 
-        @memory: size is (b x max_padding x d_model)
-        @src_mask: size is (b x 1 x d_model)
-        @tgt: size varies according to how much previous context (previous words, 'c') is loaded, (1 x c)
-        @tgt_mask: size is coupled to tgt size, and is a triangular matrix whose elements above the diagonal are true.
-          The size per @tgt is (1 x c x c)
+        Args:
+            * memory: tensor of size (b x seq_len x d_model) taken from the
+              final encoder output for seq2seq transformer models
+            * src_mask: tensor of size (b x 1 x seq_len)
+            * tgt: tensor of size (b x (seq_len-1) x d_model)
+            * tgt_mask: tensor of size (b v (seq_len-1) x (seq_len-1))
+
         """
         log.info(
             f"encdec decoder layer: memory.size()={memory.size()} src_mask.size()={src_mask.size()} tgt.size()={tgt.size()} tgt_mask.size()={tgt_mask.size()}"
@@ -1445,7 +1466,7 @@ class Batch:
     implementation below.
     """
 
-    def __init__(self, src: torch.Tensor, tgt: torch.Tensor, pad_id: int = 2):
+    def __init__(self, src: torch.Tensor, tgt: torch.Tensor, pad_id: int):
         """
         Args:
             * src: a tensor of size (b x seq_len)
@@ -1471,7 +1492,8 @@ class Batch:
 
     @staticmethod
     def make_std_mask(tgt: torch.Tensor, pad_id: int):
-        """Create a mask to hide padding and future words.
+        """Create a mask to hide padding and future words. Positions
+        in tgt equal to pad_id form the mask.
 
         Args:
             * tgt: the tgt tensor of size (b x (seqlen-1))
@@ -1520,7 +1542,6 @@ def run_epoch(
     for i, batch in enumerate(data_iter):
         out = model.forward(batch.src, batch.tgt, batch.src_mask, batch.tgt_mask)
         log.info(f"model.forward  out={out.size()}")
-        exit()
         loss, loss_node = loss_compute(out, batch.tgt_y, batch.ntokens)
         # loss_node = loss_node / accum_iter
         if mode in ["train", "train+log"]:
@@ -1805,58 +1826,91 @@ def greedy_decode(model: EncoderDecoderModel, src, src_mask, max_len, start_symb
 
 
 def beam_decode(
-    model: EncoderDecoderModel, src, src_mask, max_len, start_id, beam_length, pad_id
+    model: EncoderDecoderModel,
+    src: torch.Tensor,
+    src_mask: torch.Tensor,
+    max_len: int,
+    start_id: int,
+    beam_length: int,
+    pad_id: int,
 ) -> List[torch.Tensor]:
     """beam_decode is the same as greedy_decode except that we sample the top
     @beam_length outputs as @ys. That is, (1) encode the entire provided input
-    sequence, and (2) predict outputs; populate a beam of size @beam_length, then
-    run again and replace/add new sequence to the beam that are higher
-    probability.
+    sequence via the encoder, and (2) predict outputs one at a time; populate
+    the beam at each step with all subsequent top-probability tokens, sort the
+    beam, and truncate to beam-length.
 
     Returns a list of tensors sorted from most probable to least. No probs are
     included since there is no such requirement. Each tensor contains the word
     ids, by which the actual words can be retrieved from the vocab of the model.
 
-    The definition of probability in this context is the
-    probability of the entire sequence, such that the highest probability seq
-    has prob P*. Note that each addition to the beam need not increase the
-    current length of all predicted sequences. On the first round, the top
-    @beam_length output words will always populate the beam; thereafter, some of
-    these could remain in the beam if they have arbitrarily higher probability
-    than other alternative sequence extensions. The output probabilities
-    are one-step probs, not full sequence probabilities.
+    The definition of probability in this context is the probability of the
+    entire sequence, such that the highest probability seq has prob P*. Note
+    that each addition to the beam need not increase the current length of all
+    predicted sequences. On the first round, the top @beam_length output words
+    will always populate the beam; thereafter, some of these could remain in the
+    beam if they have arbitrarily higher probability than other alternative
+    sequence extensions. The output probabilities are one-step probs, not full
+    sequence probabilities.
 
     1) Initially, populate beam with top-k output words
-    2) For each item in beam, extend by one word (d=1), and assign the highest probability
-       one to the current word-sequence's probability, and append the word.
+    2) For each item in beam, extend by one word (d=1), and assign the highest
+       probability one to the current word-sequence's probability, and append
+       the word.
         * Modification: for d>1, continue to sample and replace
 
+    Args:
+        * src: tensor of size (b x seqlen)
+        * src_mask: masking tensor of size (b x 1 x seqlen)
+
+    Returns: a list of tensors containing sequences of token-ids, with the
+    highest probability sequence first.
     """
 
     # TODO: update me with type info when their structure is understood.
     # Or, remove and replace with tuple if local enough.
     @dataclass
     class BeamItem:
-        # The word sequence.
+        # The word sequence, as a tensor of size (seqlen x 1)
         ys: torch.Tensor
         # The accumulated probability for this sequence.
         prob: float
 
     model.ensure_inference_mode()
 
+    if src.size()[0] > 1:
+        log.warning(
+            f"beam_decode passed a src prompt tensor of size {src.size()} but "
+            + "beam_decode is currently implemented for batch size of one. Beam "
+            + "decode will only run on the first item in batch, to simplify ops "
+            + "since this is just for qualitative analyses. In the FUTURE, beam "
+            + "search could leverage batching. Beam decoding will only be "
+            + f"performed on the first item. Applying the same to src_mask={src_mask.size()}."
+        )
+        # Selects only the first item in the batch, making it a batch of size (1 x seqlen)
+        src = src[0:1, :]
+        src_mask = src_mask[0:1, :]
+
+    # Fully encode the input, and store it in @memory. We are letting the model
+    # look at the entire encoded input "state" by which to perform decoding of
+    # similar information, more like this was a translation task for which the
+    # entire input was available.
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
     log.info(
         f"memory.size()={memory.size()}, src={src.size()} src_mask={src_mask.size()}"
     )
 
-    # TODO: batchify these ops: intuition says I'm doing this wastefully, but
+    # FUTURE: batchify these ops. Intuition says I'm doing this wastefully, but
     # could run inference much faster for a batch of items in the beam at once.
-    # Beam search seems extremely amenable to very fast batchification, whereby
-    # long beams could be decoded all at once, instead of through iteration.
+    # I deliberately chose to only support a batch of one to simplify this code
+    # since this is only for qualitative analyses; however batches could extend
+    # much higher performance inference methods for whole sets of examples. Beam
+    # search seems extremely amenable to very fast batchification, whereby long
+    # beams could be decoded all at once, instead of through iteration.
     batch_size = src.size(0)
     ys = torch.zeros(batch_size, max_len).fill_(pad_id).type_as(src.data)
-    # Initialize all batches (there should be only 1) to start-id.
+    # Initialize all batches to start-id.
     ys[:, 0] = start_id
     # The beam is a list of tensors and their associated probabilities.
     # Initialized to the start_symbol, with prob chosen such that subsequent
@@ -1865,7 +1919,7 @@ def beam_decode(
 
     # TODO: revise stopping criteria, i.e. when the whole beam's items achieve
     # some length or are all capped with EOS pads.
-    for _ in range(20):
+    for next_token_index in range(1, 20):
         # For each word in the beam, run the decoder to get its top-k most
         # likely next outputs, appending this to the beam. After predicting for
         # all candidate terms and appending their top-k outputs, sort and
@@ -1875,14 +1929,28 @@ def beam_decode(
         #
         # TODO: replace beam with a heap to avoid large beam and sorting.
         #
-        # TOD: replace deepcopy with a more efficient pattern when code paths harden. This is cope to prevent the infinite loop of appending
-        # to the beam while iterating it.
+        # TODO: replace deepcopy with a more efficient pattern when code paths
+        # harden. This is cope to prevent the infinite loop of appending to the
+        # beam while iterating it.
         next_beam = []
         for beam_item in beam:
             # At each time step, mask all subsequent terms to prevent the model
-            # looking ahead.
+            # looking ahead. The mask applies to tgt positions represented by
+            # embeddings NOT words; just keep in mind that this is to prevent
+            # looking-ahead for information.
+            #
+            # TODO: is tgt masking needed at inference time? Consider toying
+            # with a mask that lets all tgt info pass, just to see what happens.
+            # The beam only looks ahead one position, so it isn't clear that any
+            # future tgt information will propagate in the Q K V operations.
+
+            # Set the next token index to anything that is not pad-id to ensure
+            # the output tokens position is not masked.
+            # beam_item.ys[:, next_token_index] = pad_id + 1
+
+            # TODO: see the original code, in which this was subsequent_mask.
+            # Which is needed here?
             ys_mask = Batch.make_std_mask(beam_item.ys, pad_id).type_as(src.data)
-            # ys_mask = subsequent_mask(beam_item.ys.size(1)).type_as(src.data)
 
             # TODO: input to the decoder is given as (1 x seqlen), where b=1.
             # The batch size b could easily be used to support decoding batches
@@ -1907,21 +1975,32 @@ def beam_decode(
             # the same size as ys, since we haven't predicted the next word
             # until below.
             out = model.decode(memory, src_mask, beam_item.ys, ys_mask)
-            prob = model.generator(out[:, -1])
+            # The generator accepts (b x seqlen x d_model), projects it and runs
+            # through log-softmax to return (b x seqlen x vocab_size). Each
+            # batch index b=i contains a sequence of softmax distributions of
+            # size (seqlen x vocab_size), thus the max value at each seqlen=j
+            # index is the highest probability word.
+            prob = model.generator(out)
             log.info(
                 f"beam_decode: ys={beam_item.ys.size()} ys_mask={ys_mask.size()} out={out.size()} prob={prob.size()}"
             )
-            # Retrieve top beam-length max next-words. By the pigeonhole
-            # principle, this ensures total coverage of possible next-best
-            # values. You could implement heuristics here to weight k by current
-            # term's likelihood. The sorted=False is because the beam is sorted later.
+            # Retrieve top beam-length max next-words across entire seqlen. By
+            # the pigeonhole principle, this ensures total coverage of possible
+            # next-best values. You could implement heuristics here to weight k
+            # by current term's likelihood. The sorted=False is because the beam
+            # is sorted later.
             #
             # probs is dim and next_word_indices is ____.
+            softmax_dim = 2
             probs, next_word_indices = torch.topk(
-                prob, k=beam_length, dim=1, sorted=False
+                prob, k=beam_length, dim=softmax_dim, sorted=False
             )
+            # The tensors are out=torch.Size([64, 72, 512])
+            # probs=torch.Size([64, 72, 30]) next_word_indices=torch.Size([64,
+            # 72, 30]). Accordingly, probs contains the actual probability, and
+            # next_word_indices their corresponding indices.
             log.info(
-                f">>> probs={probs.size()} next_word_indices={next_word_indices.size()}"
+                f"beam_decode: out={out.size()}  probs={probs.size()}  next_word_indices={next_word_indices.size()}"
             )
             # TODO: loosely, this is where we could combine beam length b and
             # depth-first search depth d, as follows. For each item in the beam,
@@ -1936,29 +2015,31 @@ def beam_decode(
             # weighted by probs, to provide slightly better performance.
 
             # Extend the beam with the top-k next-terms and their probabilities.
+            # Each of the k next-words has an index and probability; the
+            # probability is added to the current beam-item's probability in a
+            # new beam-item.
             #
-            # TODO: I'm foggy on log-softmax, which is the output of the
-            # generator. The probs are negative values, and the largest (nearest
-            # zero) is the highest prob. Likewise, log-prob addition represents
-            # multiplication back in non-log space, hence adding these
-            # cumulatively represents the total sequence prob, which is a
+            # Per log-softmax, the probs are negative values, and the largest
+            # (nearest zero) is the highest prob. Likewise, log-prob addition
+            # represents multiplication back in non-log space, hence adding
+            # these cumulatively represents the total sequence prob, which is a
             # product.
+            for prob, next_word_index in zip(
+                probs[0, next_token_index, :], next_word_indices[0, next_token_index, :]
+            ):
+                next_word_index = next_word_index.item()
+                prob = prob.item()
 
-            log.info(f"LEN: {len(list(zip(probs, next_word_indices)))}")
-
-            for prob, next_word_index in zip(probs, next_word_indices):
                 log.info(
-                    f">>> next_word_index size: {next_word_index.size()}  prob size: {prob.size()}"
+                    f"ys={beam_item.ys.size()} next_word_index={next_word_index} log-prob={prob}"
                 )
-                next_word = next_word_index.data[0]
-                next_ys = torch.cat(
-                    [
-                        beam_item.ys,
-                        torch.zeros(batch_size, 1).type_as(src.data).fill_(next_word),
-                    ],
-                    dim=1,
-                )
-                log.info(f"Next ys: {next_ys.size()}")
+                # Ys contains the current word sequence, with padding covering
+                # remaining positions. So simply over-write the next word
+                # position's padding with the next word's id.
+                next_ys = beam_item.ys.detach().clone()
+                next_ys[0, next_token_index] = next_word_index
+
+                log.info(f"Next ys: {next_ys.size()} prob={prob}")
 
                 # TODO: do not append, or rather do not reprocess/decode when
                 # next word is the EOS symbol, terminating the sequence. There
@@ -1969,18 +2050,10 @@ def beam_decode(
 
         # TODO: per other TODOs, optimize beam/next_beam redundancy, and use a heap/pque.
         beam = next_beam
-        log.info(f"beam: {beam[0].prob.size()}")
-        log.info(
-            "Exiting here so you complete beam_decode: make this func consistent with training time "
-            + "model input/output sizes. View 'out' and 'generator' and confirm "
-            + "usage and sizes are correct."
-        )
-        exit()
         beam = sorted(beam, key=lambda beam_item: beam_item.prob)
         beam = beam[:beam_length]
 
-    # TODO: return whole beam and print all sequences.
-    return beam[0].ys
+    return [beam_item.ys[0] for beam_item in beam]
 
 
 def hybrid_beam_dfs_decode(
@@ -3083,7 +3156,7 @@ def average(model, models):
 
 
 def check_outputs(
-    valid_dataloader,
+    batch_loader,
     model,
     vocab_src,
     vocab_tgt,
@@ -3093,10 +3166,25 @@ def check_outputs(
     max_len=72,
     beam_len=1,
 ):
-    results = [()] * n_examples
+
+    def tokens_to_output_sequence(out: torch.Tensor) -> str:
+        """A small driver to convert an output tensor of token ids back to
+        words.
+
+        Args:
+            * out: a tensor of size (seqlen)
+        """
+        log.info(f"out={out.size()}")
+        return (
+            " ".join([vocab_tgt.get_itos()[x] for x in out if x != pad_idx]).split(
+                eos_string, 1
+            )[0]
+            + eos_string
+        )
+
     for idx in range(n_examples):
         log.info("\nExample %d ========\n" % idx)
-        b = next(iter(valid_dataloader))
+        b = next(iter(batch_loader))
         rb = Batch(b[0], b[1], pad_idx)
         log.info(
             f">> rb.src={rb.src} rb.src.size()={rb.src.size()} rb.src_mask.size()={rb.src_mask.size()}"
@@ -3118,7 +3206,7 @@ def check_outputs(
         #     max_len,
         #     vocab_src["<s>"],
         # )
-        ys = beam_decode(
+        beam = beam_decode(
             model,
             rb.src,
             rb.src_mask,
@@ -3128,22 +3216,15 @@ def check_outputs(
             pad_id=pad_idx,
         )
 
-        model_out = ys[0]
-        log.info(f"ys={ys.size()} model_out={model_out.size()}")
-        model_txt = (
-            " ".join(
-                [vocab_tgt.get_itos()[x] for x in model_out if x != pad_idx]
-            ).split(eos_string, 1)[0]
-            + eos_string
-        )
+        top_outputs = [tokens_to_output_sequence(beam_item) for beam_item in beam]
 
         print("Source Text (Input)        : " + " ".join(src_tokens).replace("\n", ""))
         print("Target Text (Ground Truth) : " + " ".join(tgt_tokens).replace("\n", ""))
-        print("Model Output               : " + model_txt.replace("\n", "") + "\n")
+        print("Model Outputs:")
+        for output in top_outputs:
+            print(f"{output.replace("\n", "")}\n")
 
-        results[idx] = (rb, src_tokens, tgt_tokens, model_out, model_txt)
-
-    return results
+        # results[idx] = (rb, src_tokens, tgt_tokens, ys[0], output_sequence)
 
 
 def run_model_example(n_examples=5):

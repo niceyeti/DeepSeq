@@ -103,7 +103,7 @@ Beginning training with {args.config} config:
     # zero the existing loss file
     loss_path.write_text("", encoding="utf8", newline="")
 
-    only_once = os.environ.get("ONCE", "") != ""
+    only_once = "ONCE" in os.environ
 
     def persist_epoch(metrics: EpochMetrics, model: EncoderDecoderModel):
         """persist_epoch saves the metrics for the epoch to file so that once
@@ -122,11 +122,18 @@ Beginning training with {args.config} config:
                 for line in loss_file.readlines()
                 if line.strip()
             ]
+
+        # Save the minimum training error
+        min_train_error = min(map(lambda l: l.training_loss, losses), default=99999)
+        if metrics.training_loss < min_train_error:
+            torch.save(model.state_dict(), f"{config.file_prefix}_best_train.pt")
+
+        # Save the minimum validation error
         min_validation_error = min(
             map(lambda l: l.validation_loss, losses), default=99999
         )
         if metrics.validation_loss < min_validation_error:
-            torch.save(model.state_dict(), f"{config.file_prefix}_best.pt")
+            torch.save(model.state_dict(), f"{config.file_prefix}_best_val.pt")
 
         # Append the new metrics. Note this should be done after comparing the
         # losses on file, or the new metrics would be in the compared set.
