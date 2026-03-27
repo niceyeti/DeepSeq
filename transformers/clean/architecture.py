@@ -1563,10 +1563,10 @@ def run_epoch(
         if i % 40 == 1 and mode in ["train", "train+log"]:
             lr = optimizer.param_groups[0]["lr"]
             elapsed = time.time() - start
-            log.info(
+            print(
                 (
-                    "Epoch Step: %6d | Accumulation Step: %3d | Loss: %6.2f "
-                    + "| Tokens / Sec: %7.1f | Learning Rate: %6.1e"
+                    "Epoch Step: %6d   Accumulation Step: %3d   Loss: %6.2f "
+                    + "  Tokens / Sec: %7.1f   Learning Rate: %6.1e"
                 )
                 % (i, n_accum, loss / batch.ntokens, tokens / elapsed, lr)
             )
@@ -1944,13 +1944,14 @@ def beam_decode(
             # The beam only looks ahead one position, so it isn't clear that any
             # future tgt information will propagate in the Q K V operations.
 
-            # Set the next token index to anything that is not pad-id to ensure
-            # the output tokens position is not masked.
-            # beam_item.ys[:, next_token_index] = pad_id + 1
-
             # TODO: see the original code, in which this was subsequent_mask.
             # Which is needed here?
+            #
+            # TODO: what is the effect of not masking at inference time? Can it
+            # be made valid?
             ys_mask = Batch.make_std_mask(beam_item.ys, pad_id).type_as(src.data)
+            # For funsies: uncomment to allow the model to look ahead during inference.
+            # ys_mask[:, :, :] = True
 
             # TODO: input to the decoder is given as (1 x seqlen), where b=1.
             # The batch size b could easily be used to support decoding batches
@@ -1963,12 +1964,6 @@ def beam_decode(
             #
             # Other alterations are possible, such as backing up the 'value' of each word per
             # an average over its successors under some strategy, a la Monte Carlo sampling.
-
-            # ys=torch.Size([1, 2]) ys_mask=torch.Size([1, 2, 2])
-            # >>>> memory=torch.Size([32, 72, 256]) src_mask=torch.Size([32, 1, 72]) ys=torch.Size([1, 68]) ys_mask=torch.Size([1, 68, 68])
-            # print(
-            #     f">>>> memory={memory.size()} src_mask={src_mask.size()} ys={ys.size()} ys_mask={ys_mask.size()}"
-            # )
 
             # @out is size (b x cur_len x d_model), where cur_len is the current
             # len of the sequence as it is extended one at a time. Note it is
@@ -2046,6 +2041,9 @@ def beam_decode(
                 # are multiple questions here such as if terminated sequences
                 # should remain in the beam, or search should continue without
                 # them, while keeping them separately.
+                #
+                # Add log probs, as log addition represents multiplication in
+                # non-log.
                 next_beam.append(BeamItem(ys=next_ys, prob=prob + beam_item.prob))
 
         # TODO: per other TODOs, optimize beam/next_beam redundancy, and use a heap/pque.
@@ -3044,6 +3042,7 @@ def train_worker(
         len(vocab),
         N=num_layers,
         d_model=d_model,
+        d_ff=config.d_ff,
         h=config.h,
         dropout=config.dropout,
     )

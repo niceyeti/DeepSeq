@@ -1,10 +1,10 @@
 {
     // The batch size for training. Originally 32.
-    "batch_size": 64,
+    "batch_size": 32,
     // Whether or not training is distributed
     "distributed": false,
     // The number of epochs for which to train, as a static value.
-    "num_epochs": 130,
+    "num_epochs": 300,
     // Number of iterations to accumulate weight updates.
     "accum_iter": 10,
     // The number of layers, 6 in the original paper. The encoder and decoder will
@@ -14,9 +14,9 @@
     "d_model": 512,
     "dropout": 0.1,
     // The dimension of the feed-forward network appended to each attention
-    // encoder/decoder layer.
+    // encoder/decoder layer. Originally 2048.
     "d_ff": 2048,
-    // The number of heads in multi-headed attention components.
+    // The number of heads in multi-headed attention components. Originally 8.
     "h": 8,
     // The base learning rate.
     "base_lr": 1.0,
@@ -26,11 +26,13 @@
     "warmup": 3000,
     // The prefix by which models will be persisted and read back in. Model
     // progress is saved at each epoch in a pt file with this prefix.
-    "file_prefix": "./models/test/fb_news",
+    //"file_prefix": "./models/test/fb_news",
+    "file_prefix": "./models/test/independent_test_seq",
     // The training data path.
-    "data_path": "./data/fb_lines.txt",
+    //"data_path": "./data/fb_lines.txt",
+    "data_path": "./data/independent_test_sequences.txt",
     // The name of the trained model, once completed.
-    "model_path": "./models/test/fb_news_best.pt",
+    "model_path": "./models/test/independent_test_seq_best_val.pt",
     // The device: either "gpu" or "cpu" only. See torch docs.
     "device": "cpu"
 }
