@@ -558,7 +558,7 @@ def subsequent_mask(size):
     """Returns a tensor of size (1 x @size x @size) for masking out subsequent
     positions, thus ensuring the auto-regressive property of decoders. This
     returns an upper triangular matrix of booleans whose diagonal and
-    below-diagonal entries are False.
+    below-diagonal entries are True and the rest False.
 
     Returns: a tensor whose elements above the diagonal are False, and both the
     diagonal and below-diagonal elements set to True.
@@ -1829,7 +1829,6 @@ def beam_decode(
     model: EncoderDecoderModel,
     src: torch.Tensor,
     src_mask: torch.Tensor,
-    max_len: int,
     start_id: int,
     beam_length: int,
     pad_id: int,
@@ -1867,13 +1866,13 @@ def beam_decode(
     highest probability sequence first.
     """
 
-    # TODO: update me with type info when their structure is understood.
-    # Or, remove and replace with tuple if local enough.
+    # TODO: update me with type info when their structure is understood. Or,
+    # remove and replace with tuple if local enough.
     @dataclass
     class BeamItem:
         # The word sequence, as a tensor of size (seqlen x 1)
         ys: torch.Tensor
-        # The accumulated probability for this sequence.
+        # This sequence's accumulated probability, i.e. the sum of log-probs.
         prob: float
 
     model.ensure_inference_mode()
@@ -1909,17 +1908,19 @@ def beam_decode(
     # search seems extremely amenable to very fast batchification, whereby long
     # beams could be decoded all at once, instead of through iteration.
     batch_size = src.size(0)
-    ys = torch.zeros(batch_size, max_len).fill_(pad_id).type_as(src.data)
-    # Initialize all batches to start-id.
+    seq_len = src.size()[-1]
+    ys = torch.zeros(batch_size, seq_len).fill_(pad_id).type_as(src.data)
+    # Initialize all batches' first token to start-id.
     ys[:, 0] = start_id
     # The beam is a list of tensors and their associated probabilities.
     # Initialized to the start_symbol, with prob chosen such that subsequent
-    # probs accumulate correctly.
-    beam: List[BeamItem] = [BeamItem(ys=ys, prob=-1.0)]
+    # probs accumulate correctly; by definition, the start symbol's probability
+    # is 1.0, which is 0.0 in log-probs.
+    beam: List[BeamItem] = [BeamItem(ys=ys, prob=0.0)]
 
     # TODO: revise stopping criteria, i.e. when the whole beam's items achieve
     # some length or are all capped with EOS pads.
-    for next_token_index in range(1, 20):
+    for next_token_index in range(seq_len - 1):
         # For each word in the beam, run the decoder to get its top-k most
         # likely next outputs, appending this to the beam. After predicting for
         # all candidate terms and appending their top-k outputs, sort and
@@ -1968,13 +1969,14 @@ def beam_decode(
             # @out is size (b x cur_len x d_model), where cur_len is the current
             # len of the sequence as it is extended one at a time. Note it is
             # the same size as ys, since we haven't predicted the next word
-            # until below.
+            # until below. The output is still in embedding-space.
             out = model.decode(memory, src_mask, beam_item.ys, ys_mask)
             # The generator accepts (b x seqlen x d_model), projects it and runs
             # through log-softmax to return (b x seqlen x vocab_size). Each
             # batch index b=i contains a sequence of softmax distributions of
             # size (seqlen x vocab_size), thus the max value at each seqlen=j
-            # index is the highest probability word.
+            # index is the highest probability word; the index k of that value
+            # is the word/class id.
             prob = model.generator(out)
             log.info(
                 f"beam_decode: ys={beam_item.ys.size()} ys_mask={ys_mask.size()} out={out.size()} prob={prob.size()}"
@@ -1990,6 +1992,13 @@ def beam_decode(
             probs, next_word_indices = torch.topk(
                 prob, k=beam_length, dim=softmax_dim, sorted=False
             )
+            prob_word_id_tuples = [
+                (prob.item(), next_word_index.item())
+                for (prob, next_word_index) in zip(
+                    probs[0, next_token_index, :],
+                    next_word_indices[0, next_token_index, :],
+                )
+            ]
             # The tensors are out=torch.Size([64, 72, 512])
             # probs=torch.Size([64, 72, 30]) next_word_indices=torch.Size([64,
             # 72, 30]). Accordingly, probs contains the actual probability, and
@@ -2019,12 +2028,7 @@ def beam_decode(
             # represents multiplication back in non-log space, hence adding
             # these cumulatively represents the total sequence prob, which is a
             # product.
-            for prob, next_word_index in zip(
-                probs[0, next_token_index, :], next_word_indices[0, next_token_index, :]
-            ):
-                next_word_index = next_word_index.item()
-                prob = prob.item()
-
+            for prob, next_word_index in prob_word_id_tuples:
                 log.info(
                     f"ys={beam_item.ys.size()} next_word_index={next_word_index} log-prob={prob}"
                 )
@@ -2032,7 +2036,7 @@ def beam_decode(
                 # remaining positions. So simply over-write the next word
                 # position's padding with the next word's id.
                 next_ys = beam_item.ys.detach().clone()
-                next_ys[0, next_token_index] = next_word_index
+                next_ys[0, next_token_index + 1] = next_word_index
 
                 log.info(f"Next ys: {next_ys.size()} prob={prob}")
 
@@ -2048,7 +2052,7 @@ def beam_decode(
 
         # TODO: per other TODOs, optimize beam/next_beam redundancy, and use a heap/pque.
         beam = next_beam
-        beam = sorted(beam, key=lambda beam_item: beam_item.prob)
+        beam = sorted(beam, key=lambda beam_item: -beam_item.prob)
         beam = beam[:beam_length]
 
     return [beam_item.ys[0] for beam_item in beam]
@@ -3209,8 +3213,7 @@ def check_outputs(
             model,
             rb.src,
             rb.src_mask,
-            max_len,
-            vocab_src["<s>"],
+            start_id=vocab_src["<s>"],
             beam_length=beam_len,
             pad_id=pad_idx,
         )
