@@ -1,0 +1,46 @@
+// This config points to the dataset of simple alphabetic sequences. Training on
+// this dataset confirms that the model is qualitatively and quantitatively
+// correct, by training and then outputting those same sequences, and then
+// confirming that the model has correctly learned the input sequences. This
+// test is extremely valuable and checks many boxes, as it confirms that the
+// autoregressive nature of training and decoding/outputing functions correctly
+// after changes, provides a simple dataset for development with minimal
+// training time, model introspection and visualization, and so forth.
+{
+    // The batch size for training. Originally 32.
+    "batch_size": 32,
+    // Whether or not training is distributed
+    "distributed": false,
+    // The number of epochs for which to train, as a static value.
+    "num_epochs": 100,
+    // Number of iterations to accumulate weight updates.
+    "accum_iter": 10,
+    // The number of layers, 6 in the original paper. The encoder and decoder will
+    // each have this number of layers.
+    "num_layers": 6,
+    // The model dimension, 512 in the original paper.
+    "d_model": 512,
+    "dropout": 0.1,
+    // The dimension of the feed-forward network appended to each attention
+    // encoder/decoder layer. Originally 2048.
+    "d_ff": 2048,
+    // The number of heads in multi-headed attention components. Originally 8.
+    "h": 8,
+    // The base learning rate.
+    "base_lr": 1.0,
+    // Max padding is the maximum padding but also effectively the maximum sequence
+    // length on which to train.
+    "max_padding": 72,
+    "warmup": 3000,
+    // The prefix by which models will be persisted and read back in. Model
+    // progress is saved at each epoch in a pt file with this prefix.
+    //"file_prefix": "./models/test/fb_news",
+    "file_prefix": "./models/test/independent_test_seq",
+    // The training data path.
+    //"data_path": "./data/fb_lines.txt",
+    "data_path": "./data/independent_test_sequences.txt",
+    // The name of the trained model, once completed.
+    "model_path": "./models/test/independent_test_seq_best_val.pt",
+    // The device: either "gpu" or "cpu" only. See torch docs.
+    "device": "cpu"
+}
