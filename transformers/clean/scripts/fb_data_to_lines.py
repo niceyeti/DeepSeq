@@ -39,17 +39,71 @@ def parse_fb_data_lines(line_gen: Iterator) -> Iterator[str]:
                 yield og_object["description"]
 
 
+def is_numeric(s: str):
+    """is_numeric returns true for anything convertible to a float from strings."""
+    s = s.replace(",", "")
+    try:
+        _ = float(s)
+        return True
+    except:
+        return False
+
+
+def is_time(s: str):
+    """is_time returns true for time like strings, with a wide, inaccurate berth."""
+    if ":" in s:
+        return is_numeric(s.replace(":", ""))
+
+
 # TODO: there is existing normalization code in the transformer for
 # normalization.
 def normalize_en_line(line: str) -> str:
+
+    line = line.lower()
+
+    # Bespoke rules, based on eyeballing the output lines.
     line = (
-        line.lower()
-        .replace(".", " ")
-        .replace(",", " ")
-        .replace(":", " ")
-        .replace('"', " ")
-        .strip()
+        line.replace("u.s.", "united states")
+        .replace("d.c.", "district of columbia")
+        .replace("'s", "")
     )
+
+    lower_tokens = line.split()
+    for i, token in enumerate(lower_tokens):
+        if token[0] == "$":
+            lower_tokens[i] = "<dollars>"
+            continue
+        if token[-1] == "%":
+            lower_tokens[i] = "<percentage>"
+            continue
+        if is_numeric(token):
+            lower_tokens[i] = "<number>"
+            continue
+        if is_time(token):
+            lower_tokens[i] = "<datetime>"
+            continue
+
+    mappings = [
+        (".", " "),
+        ("!", " "),
+        ("?", " "),
+        (",", " "),
+        (":", " "),
+        (";", " "),
+        ('"', " "),
+        ("'", ""),
+        (")", ""),
+        ("(", ""),
+        ("-", " "),
+        ("—", " "),
+        ("*", ""),
+    ]
+    trans_table = {}
+    for tup in mappings:
+        trans_table[tup[0]] = tup[1]
+    trans_table = str.maketrans(trans_table)
+
+    line = " ".join(lower_tokens).translate(trans_table).strip()
 
     while len(line) > len(line.replace("  ", " ")):
         line = line.replace("  ", " ")

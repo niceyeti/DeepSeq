@@ -26,13 +26,11 @@
     "warmup": 3000,
     // The prefix by which models will be persisted and read back in. Model
     // progress is saved at each epoch in a pt file with this prefix.
-    //"file_prefix": "./models/test/fb_news",
-    "file_prefix": "./models/test/independent_test_seq",
+    "file_prefix": "./models/fb/fb_news",
     // The training data path.
-    //"data_path": "./data/fb_lines.txt",
-    "data_path": "./data/independent_test_sequences.txt",
+    "data_path": "./data/fb_lines.txt",
     // The name of the trained model, once completed.
-    "model_path": "./models/test/independent_test_seq_best_val.pt",
+    "model_path": "./models/fb/fb_news_best_val.pt",
     // The device: either "gpu" or "cpu" only. See torch docs.
     "device": "cpu"
 }

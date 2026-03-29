@@ -8,6 +8,10 @@
 // training time, model introspection and visualization, and so forth.
 {
     // The batch size for training. Originally 32.
+    //
+    // IMPORTANT: make sure that the dataset is at least twice batch-size for
+    // trivial model-development datasets, as datasets that are too small aren't
+    // handled by the model training train/test split code.
     "batch_size": 32,
     // Whether or not training is distributed
     "distributed": false,
