@@ -61,11 +61,15 @@ def normalize_en_line(line: str) -> str:
 
     line = line.lower()
 
-    # Bespoke rules, based on eyeballing the output lines.
+    # Bespoke rules, based on eyeballing the output lines. Aren't, can't, doesn't, isn't, won't...
     line = (
         line.replace("u.s.", "united states")
+        .replace("u.k.", "united kingdom")
+        .replace(" l.a.", " los angeles")
         .replace("d.c.", "district of columbia")
+        .replace("won't", "will not")
         .replace("'s", "")
+        .replace("n't", " not")
     )
 
     lower_tokens = line.split()

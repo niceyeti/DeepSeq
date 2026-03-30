@@ -615,7 +615,6 @@ def example_mask():
     )
 
 
-# TODO: is mask ever None? This check bugs me, remove default of None if possible.
 def attention(query, key, value, mask=None, dropout=None, module_name: str = ""):
     """
     Per the masking issue: it might be worth looking at
@@ -677,6 +676,8 @@ def attention(query, key, value, mask=None, dropout=None, module_name: str = "")
         * mask:  (b x 1 x seq_len) for encoder self-attn, and (b x 1 x
           (seqlen-1) x (seqlen-1)) for tgt cross-attention.
         * dropout: if any
+        * module_name: the module name (encoder, decoder, etc) in which
+          attention is being calculated, to help with debugging.
     """
     # Get the dimensionality d_head
     d_head = query.size(-1)
@@ -852,8 +853,8 @@ class MultiHeadedAttention(nn.Module):
         self._module_name = module_name
 
     def original_forward(self, query, key, value, mask=None):
-        """This is the original forward implementation which is much more
-        compact and elegant, closely resembles the paper definition of
+        """Obsolete: this is the original forward implementation which is much
+        more compact and elegant, closely resembles the paper definition of
         attention. I exploded the forward implementation simply for some
         required debugging, which makes this much less readable. Even though
         this func is not called, I'm leaving it for reference to the intended
@@ -913,7 +914,7 @@ class MultiHeadedAttention(nn.Module):
         # Here, each query, key, and value matrix has associated weights and is
         # run through a linear model, as shown in many tutorials, resulting in
         # the final query, key, and value matrices.
-
+        #
         # Note: original compact code setup of the linear layers. The zip looks like
         # a bug as there are four linear layers but zip iterates only the smaller
         # collection (len 3), thus omitting the fourth layer. However the last layer
@@ -932,7 +933,7 @@ class MultiHeadedAttention(nn.Module):
         # be transformed to (d_input x b * max_padding).
         W_q = self.linears[0]
         log.info(
-            f"{self._module_name}  W_q={W_q.weight.size()} query={query.size()} nbatches={q_batch_size} d_k={self.d_k}"
+            f"{self._module_name}  W_q={W_q.weight.size()} query={query.size()} n_q_batches={q_batch_size} d_k={self.d_k} n_k_batches={k_batch_size}"
         )
         # q * W_q   whose dimensions are   (d_model x d_model) * (b x max_padding x d_model)
         #
@@ -968,7 +969,7 @@ class MultiHeadedAttention(nn.Module):
         # vector is just broken into 8 different sections with independent
         # weights.
 
-        """
+        _ = """
         By omitting the first dimension, the batch, we can get a better view of what is happening here
         by looking at only a single training example, its vectors, and weights.
 
@@ -1010,7 +1011,6 @@ class MultiHeadedAttention(nn.Module):
 
                 [[0.3143, 0.1763],
                 [0.8792, 0.0755]]])
-                
 
         >>> r_v_t = r_v.transpose(0,1)
         >>> r_v_t
@@ -1019,11 +1019,6 @@ class MultiHeadedAttention(nn.Module):
 
                 [[0.2627, 0.8666],
                 [0.8792, 0.0755]]])
-
-
-
-
-
 
         Simulates a single training example of len 2 and d_model=4
             >>> r = torch.rand((2,4))
@@ -1039,8 +1034,6 @@ class MultiHeadedAttention(nn.Module):
                 [0.1266, 0.2747],
                 [0.2416, 0.6700]])
 
-
-
         # Start with a tensor of size (seq_len x d_model)
         >>> r = torch.rand((1,2,4))
         >>> r
@@ -1054,9 +1047,6 @@ class MultiHeadedAttention(nn.Module):
                 [0.0986, 0.0034],
                 [0.3829, 0.1877],
                 [0.0027, 0.3378]]]) 
-        
-        
-        
         """
 
         q_out = Wq.view(q_batch_size, -1, self.h, self.d_k)
@@ -1081,7 +1071,7 @@ class MultiHeadedAttention(nn.Module):
         # regression is logged or raised.
         k_out = Wk.view(k_batch_size, -1, self.h, self.d_k)
         log.info(
-            f"{self._module_name}  Wk={Wk.size()}  k_out={k_out.size()} (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))"
+            f"{self._module_name}  Wk={Wk.size()}  k_batch_size={k_batch_size}  k_out={k_out.size()} (where k_out size is (W_k*k).view(nbatches, -1, self.h, self.d_k))"
         )
         key = k_out.transpose(1, 2)
         log.info(f"{self._module_name}  key={key.size()} (via k_out.transpose(1, 2))")
@@ -1089,12 +1079,12 @@ class MultiHeadedAttention(nn.Module):
         # W_v * v   whose dimensions are   (d_model x d_model) * (d_model x)
         W_v = self.linears[2]
         log.info(
-            f"{self._module_name}  W_v={W_v.weight.size()} value={value.size()} v-batches={v_batch_size}"
+            f"{self._module_name}  W_v={W_v.weight.size()}  value={value.size()}  v_batch_size={v_batch_size}"
         )
         Wv = W_v(value)
         v_out = Wv.view(v_batch_size, -1, self.h, self.d_k)
         log.info(
-            f"{self._module_name}  Wv={Wv.size()}  v_out={v_out.size()} v_batch_size={v_batch_size}"
+            f"{self._module_name}  Wv={Wv.size()}  v_out={v_out.size()}  v_batch_size={v_batch_size}"
         )
         value = v_out.transpose(1, 2)
         log.info(f"{self._module_name}  value={value.size()}")
@@ -1115,18 +1105,17 @@ class MultiHeadedAttention(nn.Module):
         )
         log.info(f"{self._module_name}  x={x.size()} self.attn={self.attn.size()}")
 
-        # 3) "Concat" using a view and apply a final linear.
-        #
-        # contiguous() ensures that underlying storage of the tensor is
-        # contiguous, despite previous tranpose and other view operations; it
-        # returns the original tensor if no transforms have been applied, and a
-        # copied new tensor otherwise.
+        # 3) "Concat" using a view and apply a final linear. The contiguous()
+        # ensures that underlying storage of the tensor is contiguous, despite
+        # previous tranpose and other view operations; it returns the original
+        # tensor if no transforms have been applied, and a copied new tensor
+        # otherwise.
         x = x.transpose(1, 2).contiguous().view(q_batch_size, -1, self.h * self.d_k)
         del query
         del key
         del value
         final_out = self.linears[-1](x)
-        # final_out = (32 x 72 x 512)
+        # final_out: (32 x 72 x 512)
         log.info(
             f"{self._module_name}  x reshaped={x.size()} final_out={final_out.size()}"
         )
@@ -1501,9 +1490,6 @@ class Batch:
 
         Returns: a tensor of size (b x (seqlen-1) x (seqlen-1)), whose final two
         dimensions are the upper-triangular boolean mask matrices.
-
-        TODO: there is a reported bug in this code, need to review.
-        https://github.com/harvardnlp/annotated-transformer/issues/137
         """
         tgt_mask = (tgt != pad_id).unsqueeze(-2)
         tgt_mask = tgt_mask & subsequent_mask(tgt.size(-1)).type_as(tgt_mask.data)
@@ -1782,10 +1768,9 @@ def greedy_decode(model: EncoderDecoderModel, src, src_mask, max_len, start_symb
     it, and then running the decoder one word at a time to create the same
     sequence. This is roughly similar to summarization, though the exact target
     output is the original sentence.
-
-    NOTE: make sure you call model.eval() before calling this to ensure layers
-    like Dropout are disabled!
     """
+
+    model.ensure_inference_mode()
 
     # global log
     memory = model.encode(src, src_mask)
@@ -1832,6 +1817,7 @@ def beam_decode(
     start_id: int,
     beam_length: int,
     pad_id: int,
+    output_callback: Callable[[torch.Tensor, int], None] = lambda _: None,
 ) -> List[torch.Tensor]:
     """beam_decode is the same as greedy_decode except that we sample the top
     @beam_length outputs as @ys. That is, (1) encode the entire provided input
@@ -1861,13 +1847,14 @@ def beam_decode(
     Args:
         * src: tensor of size (b x seqlen)
         * src_mask: masking tensor of size (b x 1 x seqlen)
+        * beam_length: the number of items to hold in the beam, an optimization
+          hyper-parameter. Note this is not smooth: lit suggest 3-6 is optimal,
+          and likewise increasing beam length can end up shortening sequences.
 
     Returns: a list of tensors containing sequences of token-ids, with the
     highest probability sequence first.
     """
 
-    # TODO: update me with type info when their structure is understood. Or,
-    # remove and replace with tuple if local enough.
     @dataclass
     class BeamItem:
         # The word sequence, as a tensor of size (seqlen x 1)
@@ -1951,7 +1938,9 @@ def beam_decode(
             # TODO: what is the effect of not masking at inference time? Can it
             # be made valid?
             ys_mask = Batch.make_std_mask(beam_item.ys, pad_id).type_as(src.data)
-            # For funsies: uncomment to allow the model to look ahead during inference.
+            # For funsies: uncomment to allow the model to look ahead during
+            # inference.
+            #
             # ys_mask[:, :, :] = True
 
             # TODO: input to the decoder is given as (1 x seqlen), where b=1.
@@ -1975,12 +1964,14 @@ def beam_decode(
             # through log-softmax to return (b x seqlen x vocab_size). Each
             # batch index b=i contains a sequence of softmax distributions of
             # size (seqlen x vocab_size), thus the max value at each seqlen=j
-            # index is the highest probability word; the index k of that value
-            # is the word/class id.
+            # index is the highest probability word; the index k into vocab_size
+            # of that value is the word/class id.
             prob = model.generator(out)
             log.info(
                 f"beam_decode: ys={beam_item.ys.size()} ys_mask={ys_mask.size()} out={out.size()} prob={prob.size()}"
             )
+            output_callback(prob, next_token_index)
+
             # Retrieve top beam-length max next-words across entire seqlen. By
             # the pigeonhole principle, this ensures total coverage of possible
             # next-best values. You could implement heuristics here to weight k
@@ -3169,7 +3160,6 @@ def check_outputs(
     max_len=72,
     beam_len=1,
 ):
-
     def tokens_to_output_sequence(out: torch.Tensor) -> str:
         """A small driver to convert an output tensor of token ids back to
         words.
@@ -3184,6 +3174,62 @@ def check_outputs(
             )[0]
             + eos_string
         )
+
+    def output_callback(out_probs: torch.Tensor, token_index: int):
+        """output_callback is an optional diagnostic callback for introspecting
+        model decoded outputs per beam-item. This essentially just shows the
+        greedy-decoding output, for a single beam-item evaluation. During beam
+        search, an input is encoded, and then iteratively the output target is
+        built one token at a time for each item in the beam; this callback is
+        called for each of these, passing in the output probs of the model per
+        each decode() operation. This is purely of qualitative interest, as the
+        output probabilities require further search to find high-probability
+        sequences; the words at a particular token index merely show the ranking
+        over terms at that index for one decode operation, though in practice
+        only the nth index is of importance, that being the token to be appended
+        to the current beam item's output.
+
+
+        Primarily I just want to be able to peek the model outputs without beam
+        search, out of curiosity that since the model was trained on entire
+        output sequences, not progressively like an RNN, then the outputs at
+        each stage might be highly efficient/complete in themselves without the
+        costly progressive beam search step of building the target output one
+        token at a time and re-calling decode() each time.
+
+        Args:
+            * probs: the complete output tensor of size (b x seqlen x
+              vocab_size) that results from calling out=decode(...) and then
+              prob=generator(out). The output log-softmax probability indices
+              correspond with vocab ids; hence finding the top-k entries gives
+              the top-k most probable word indices.
+            * token_index: the current index of interest to beam search. This
+              indicates the column of words that are actually of interest.
+        """
+        softmax_dim = 2
+        k = 5
+        probs, next_word_indices = torch.topk(
+            out_probs, k=k, dim=softmax_dim, sorted=True
+        )
+        log.warning(
+            f"probs={probs.size()} next_word_indices={next_word_indices.size()} probs[0,0,:]={probs[0,0,:]} next_word_indices={next_word_indices[0,0,:]}"
+        )
+
+        top_output_sequences = [
+            tokens_to_output_sequence(next_word_indices[0, :, i]) for i in range(k)
+        ]
+        print(
+            f"Top output sequences from absolute model output, current token-index={token_index}, no search:"
+        )
+        for i, output_sequence in enumerate(top_output_sequences):
+            print(f"{i}) {output_sequence}")
+
+    beam_debug = int(os.environ.get("BEAM_DEBUG", "0"))
+
+    if beam_debug:
+        output_fn = output_callback
+    else:
+        output_fn = lambda t, i: None
 
     for idx in range(n_examples):
         log.info("\nExample %d ========\n" % idx)
@@ -3216,17 +3262,21 @@ def check_outputs(
             start_id=vocab_src["<s>"],
             beam_length=beam_len,
             pad_id=pad_idx,
+            output_callback=output_fn,
         )
 
         top_outputs = [tokens_to_output_sequence(beam_item) for beam_item in beam]
 
-        print("Source Text (Input)        : " + " ".join(src_tokens).replace("\n", ""))
-        print("Target Text (Ground Truth) : " + " ".join(tgt_tokens).replace("\n", ""))
+        print(
+            "Source Text (Input)        :\n  " + " ".join(src_tokens).replace("\n", "")
+        )
+        print(
+            "Target Text (Ground Truth) :\n  " + " ".join(tgt_tokens).replace("\n", "")
+        )
         print("Model Outputs:")
         for output in top_outputs:
-            print(f"{output.replace("\n", "")}\n")
-
-        # results[idx] = (rb, src_tokens, tgt_tokens, ys[0], output_sequence)
+            print(f"  {output.replace("\n", "")}")
+        print("")
 
 
 def run_model_example(n_examples=5):

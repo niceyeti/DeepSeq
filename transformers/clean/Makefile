@@ -28,6 +28,14 @@ LOG_LEVEL?=WARNING
 # 3-6 is optimal. Be sure to play with this value and infer the internal
 # behavior based on the output, for example the output sequence length.
 BEAM_LENGTH?=30
+# The current beam search is highly qualitative and introspective, not
+# production. BEAM_DEBUG allows outputting extended beam-search introspection,
+# such as outputting the greedy-decodings per each beam-item decode() operation,
+# to observe the quality of term rankings considered by beam-search. Beam search
+# is actually extremely engineer-able, and subject to statistical considerations
+# as to what constitutes "best" words, so it is very useful to consider.
+# This is an integer value to support levels of beam-debug: 0 means off.
+BEAM_DEBUG?=0
 
 
 .PHONY: clean
@@ -100,6 +108,7 @@ train:
 check-outputs:
 	source .venv/bin/activate && \
 	BEAM_LENGTH=$(BEAM_LENGTH) \
+	BEAM_DEBUG=$(BEAM_DEBUG) \
 	LOG_LEVEL=$(LOG_LEVEL) \
 		python check_outputs_driver.py -c $(CONFIG_PATH)
 

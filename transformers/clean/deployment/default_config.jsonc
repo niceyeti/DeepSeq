@@ -30,7 +30,7 @@
     // The training data path.
     "data_path": "./data/fb_lines.txt",
     // The name of the trained model, once completed.
-    "model_path": "./models/fb/fb_news_best_val.pt",
+    "model_path": "./models/fb/fb_news_best_train.pt",
     // The device: either "gpu" or "cpu" only. See torch docs.
     "device": "cpu"
 }
