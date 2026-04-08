@@ -66,6 +66,7 @@ nintendo plans to pick up the production pace for its hit switch game console ne
                 # Set randomize to false, since this test depends on
                 # deterministic ordering to be able to test things.
                 randomize=False,
+                is_development=False,
             )
 
             # Then: the combined iterators have the same number of examples as

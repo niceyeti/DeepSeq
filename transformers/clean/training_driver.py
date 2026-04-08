@@ -60,7 +60,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="Transformer",
-        description="This package implements basic transformer components from The Annotated Transformer.",
+        description="This package implements basic transformer components.",
     )
     parser.add_argument(
         "-c",
@@ -89,12 +89,25 @@ Beginning training with {args.config} config:
     _, spacy_en = architecture.load_tokenizers()
 
     # TODO: add a max sequence length parameter. The model has a fixed max input
-    # size of 512 tokens, and sentences need to be truncated to that length or
+    # size of tokens, and sentences need to be truncated to that length or
     # omitted if too long.
     train_iter, val_iter = architecture.get_line_iters(config.data_path)
+    # This is an inelegant hack, but serves an important purpose. When training
+    # purely for model testing (i.e., in development to ensure
+    # training/inference validity using a very simple problem), a simple small
+    # set of sequences is mapped to itself or another trivial vocabulary and
+    # sequences. This truncates the target sequences to half length, as a
+    # demonstration of pseudo-summarization, whereby a target sequence is
+    # intended to be shorter than the input training.
+    if "test_sequences" in config.data_path:
+        print(
+            f"'test_sequences' detected in training data path {config.data_path}. Truncating target sequences to 1/2 size to test pseudo-summarization."
+        )
+        train_iter, val_iter = architecture.get_model_test_iters(train_iter, val_iter)
 
+    min_frequency = int(os.environ.get("MIN_FREQUENCY", "1"))
     vocab = architecture.build_en_vocabulary(
-        train_iter, val_iter, spacy_en, min_frequency=1
+        train_iter, val_iter, spacy_en, min_frequency=min_frequency
     )
 
     architecture.save_vocab(vocab, f"{config.file_prefix}.pth")

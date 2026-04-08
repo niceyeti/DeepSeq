@@ -1436,13 +1436,13 @@ class Batch:
         * src_mask: a bool tensor of size (b x 1 x seq_len) masks the src input
           padding elements for the given src instance of (b x 1 x seqlen).
         * tgt: a tensor of size (b x seq_len-1). This is tgt output excluding
-          the final token (often a mere padding token) used for the encoder.
+          the final token (often a mere padding token) used for the decoder.
           NOTE: wherever this is used, confirm on paper that the minus-one size
           is correct.
         * tgt_y: a tensor of size (b x seq_len-1). This is tgt output excluding
-          the first token (often a mere padding token), used for the decoder.
-          NOTE: wherever this is used, confirm on paper that the minus-one size
-          is correct.
+          the first token (often a mere padding token), used for the loss
+          function. NOTE: wherever this is used, confirm on paper that the
+          minus-one size is correct.
         * tgt_mask is the mask derived from make_std_mask and tgt. NOTE: as tgt
           removes one final token, verify that the dimension of tgt_mask is
           correct in its application.
@@ -1471,9 +1471,9 @@ class Batch:
         # TODO: src_mask, tgt, tgt_y and tgt_mask are the most nuanced part of this
         # code and need to be documented; the off by one risks are significant.
 
-        # tgt is the tgt output, EXCLUDING the final token, used for the encoder.
+        # tgt is the tgt output, EXCLUDING the final token, used for the decoder.
         self.tgt = tgt[:, :-1]
-        # tgt_y is the tgt output EXCLUDING the first token, used for the decoder.
+        # tgt_y is the tgt output EXCLUDING the first token, used for the loss function.
         self.tgt_y = tgt[:, 1:]
         # tgt_mask is the mask derived from make_std_mask
         self.tgt_mask = self.make_std_mask(self.tgt, pad_id)
@@ -1761,18 +1761,17 @@ class SimpleLossCompute:
 
 
 def greedy_decode(model: EncoderDecoderModel, src, src_mask, max_len, start_symbol):
-    """greedy_decode encodes the entire input sequence and then repeatedly samples
-    the argmax term at each time step from the decoder. For the purposes of
-    language prediction within a single language, this is effectively a
+    """greedy_decode encodes the entire input sequence and then repeatedly
+    samples the argmax term at each time step from the decoder. For the purposes
+    of language prediction within a single language, this is effectively a
     inference check on an autoencoder, taking in "the quick brown fox", encoding
     it, and then running the decoder one word at a time to create the same
-    sequence. This is roughly similar to summarization, though the exact target
-    output is the original sentence.
+    sequence. This is roughly like summarization, though the exact target output
+    is the original sentence.
     """
 
     model.ensure_inference_mode()
 
-    # global log
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
     log.info(
@@ -1823,7 +1822,12 @@ def beam_decode(
     @beam_length outputs as @ys. That is, (1) encode the entire provided input
     sequence via the encoder, and (2) predict outputs one at a time; populate
     the beam at each step with all subsequent top-probability tokens, sort the
-    beam, and truncate to beam-length.
+    beam, then truncate to beam-length and repeat. NOTE: beam search is filled
+    with subtlety, notably per sequence length, i.e. removing vs. locking-in
+    sequences prematurely terminated with a (high probability) EOS symbol, how
+    to properly rank or randomize possible next terms (straightforward top-k
+    sorting is used, but other sampling options exist); this is just vanilla
+    beam search.
 
     Returns a list of tensors sorted from most probable to least. No probs are
     included since there is no such requirement. Each tensor contains the word
@@ -1837,6 +1841,33 @@ def beam_decode(
     beam if they have arbitrarily higher probability than other alternative
     sequence extensions. The output probabilities are one-step probs, not full
     sequence probabilities.
+
+    FUTURE: there are lots of other personal notes of beamsearch modifications,
+    but consider adding/factoring a strategy for calculating sequential
+    probability. Ranking beam items by formal cumulative probability usually
+    results in the root of a single sequence dominating all others; it is also
+    highly sensitive to the amount of training, etc., such that an overfitted
+    model will exactly memorize the training sequences. In short, the parameters
+    learnt by the model might be seen as separate from those used for inference.
+    An alternative approach to the formally defined cdf of log-probs would be to
+    (1) rank next items by log-prob (2) assign their probability not from the
+    model's prediction but an external evaluative metric, the simplest being
+    1/rank. As an explicit example, rank k-top next-tokens by log-prob, then
+    assign their probability as 1/rank. The intuition here is actually quite
+    deep, which is that the predictive model of sequential probability is not
+    what we want at inference time, for which there may be another model of
+    "fit" at play, with its own parameters, and possibly even a strategy for
+    token selection. Also note that in general, evaluating the 'value' of any
+    token is virtually equivalent in its formulation to an RL problem, for which
+    the state is the token index (sequential position) and the token id, for
+    which one wants to estimate the value of each successor "state" (token)
+    according to some strategy, or 'backup'. Lastly, this could incorporate some
+    strategy for clamping the positions of predecessor words; the reasoning here
+    is that the beam-length tends to simply favor the most likely first-token,
+    second-token, etc, whereas our goal is to favor greater diversity of
+    sequences resembling the input context; in short, the beam maximizes a
+    little too much, and the modifying the definition of cumulative probabilty
+    or 'score' could be engineering to make this less overfitting.
 
     1) Initially, populate beam with top-k output words
     2) For each item in beam, extend by one word (d=1), and assign the highest
@@ -1881,10 +1912,10 @@ def beam_decode(
     # look at the entire encoded input "state" by which to perform decoding of
     # similar information, more like this was a translation task for which the
     # entire input was available.
-    memory = model.encode(src, src_mask)
+    encoded_src = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
     log.info(
-        f"memory.size()={memory.size()}, src={src.size()} src_mask={src_mask.size()}"
+        f"memory.size()={encoded_src.size()}, src={src.size()} src_mask={src_mask.size()}"
     )
 
     # FUTURE: batchify these ops. Intuition says I'm doing this wastefully, but
@@ -1924,42 +1955,33 @@ def beam_decode(
         for beam_item in beam:
             # At each time step, mask all subsequent terms to prevent the model
             # looking ahead. The mask applies to tgt positions represented by
-            # embeddings NOT words; just keep in mind that this is to prevent
-            # looking-ahead for information.
-            #
-            # TODO: is tgt masking needed at inference time? Consider toying
-            # with a mask that lets all tgt info pass, just to see what happens.
-            # The beam only looks ahead one position, so it isn't clear that any
-            # future tgt information will propagate in the Q K V operations.
-
-            # TODO: see the original code, in which this was subsequent_mask.
-            # Which is needed here?
-            #
-            # TODO: what is the effect of not masking at inference time? Can it
-            # be made valid?
+            # embeddings NOT words.
             ys_mask = Batch.make_std_mask(beam_item.ys, pad_id).type_as(src.data)
             # For funsies: uncomment to allow the model to look ahead during
             # inference.
             #
             # ys_mask[:, :, :] = True
 
-            # TODO: input to the decoder is given as (1 x seqlen), where b=1.
+            # FUTURE: input to the decoder is given as (1 x seqlen), where b=1.
             # The batch size b could easily be used to support decoding batches
             # of the beam at a time, more efficiently than through iteration.
 
             # Hybrid beam with greedy depth search:
             # - for each item in the beam
-            # - run decoder greedily for d steps, i.e. repeat d times: `next_word = decode(next_word)`
-            # - return max_prob, and arg_max sequence for this item to add to beam
+            # - run decoder greedily for d steps, i.e. repeat d times:
+            #   `next_word = decode(next_word)`
+            # - return max_prob, and arg_max sequence for this item to add to
+            #   beam
             #
-            # Other alterations are possible, such as backing up the 'value' of each word per
-            # an average over its successors under some strategy, a la Monte Carlo sampling.
+            # Many alterations are possible, such as backing up the 'value' of
+            # each word per an average over its successors under some strategy,
+            # a la Monte Carlo sampling.
 
             # @out is size (b x cur_len x d_model), where cur_len is the current
             # len of the sequence as it is extended one at a time. Note it is
             # the same size as ys, since we haven't predicted the next word
             # until below. The output is still in embedding-space.
-            out = model.decode(memory, src_mask, beam_item.ys, ys_mask)
+            out = model.decode(encoded_src, src_mask, beam_item.ys, ys_mask)
             # The generator accepts (b x seqlen x d_model), projects it and runs
             # through log-softmax to return (b x seqlen x vocab_size). Each
             # batch index b=i contains a sequence of softmax distributions of
@@ -1977,8 +1999,6 @@ def beam_decode(
             # next-best values. You could implement heuristics here to weight k
             # by current term's likelihood. The sorted=False is because the beam
             # is sorted later.
-            #
-            # probs is dim and next_word_indices is ____.
             softmax_dim = 2
             probs, next_word_indices = torch.topk(
                 prob, k=beam_length, dim=softmax_dim, sorted=False
@@ -1997,7 +2017,7 @@ def beam_decode(
             log.info(
                 f"beam_decode: out={out.size()}  probs={probs.size()}  next_word_indices={next_word_indices.size()}"
             )
-            # TODO: loosely, this is where we could combine beam length b and
+            # TODO: loosely, this is where one could combine beam length b and
             # depth-first search depth d, as follows. For each item in the beam,
             # decode twice forward: find the top-k most likely words for the
             # current item, then for each of these, probe again to find the most
@@ -2102,7 +2122,6 @@ def hybrid_beam_dfs_decode(
         # The accumulated probability for this sequence.
         prob: float
 
-    # global log
     memory = model.encode(src, src_mask)
     # memory.size()=torch.Size([32, 72, 256]), src=torch.Size([32, 72]) src_mask=torch.Size([32, 1, 72])
     log.info(
@@ -2598,7 +2617,7 @@ def create_dataloaders(
 
 def read_line_sentences(fpath: str) -> TGenerator[str, None, None]:
     """read_novel_sentences reads a novel-like file, which is any file
-    whose lines extend sentences over one or more lines, like the hucklberry
+    whose lines extend sentences over one or more lines, like the huckleberry
     finn opensource novel.
 
     Note that this is super inefficient, because in order to cleanly break on
@@ -2725,7 +2744,7 @@ def get_line_iters(
 ) -> Tuple[
     TGenerator[Tuple[str, str], None, None], TGenerator[Tuple[str, str], None, None]
 ]:
-    """get_novel_sentence_iters returns a training and validation iterator over the
+    """get_line_iters returns a training and validation iterator over the
     lines found in the passed fpath. Each line is treated as an example. Each
     iterator iterates the lines as (line,line) pairs, where the first entry is
     the input and second entry is the target. The lines are shuffled before
@@ -2758,6 +2777,30 @@ def get_line_iters(
         )
 
     return ((line, line) for line in train_lines), ((line, line) for line in val_lines)
+
+
+def get_model_test_iters(
+    train_iter: TGenerator[Tuple[str, str], None, None],
+    test_iter: TGenerator[Tuple[str, str], None, None],
+) -> Tuple[
+    TGenerator[Tuple[str, str], None, None], TGenerator[Tuple[str, str], None, None]
+]:
+    """get_model_test_iters converts the iters from get_line_iters to
+    iters useful for model testing, for which one wants a simple set of
+    sequences and small vocabulary with specific properties (i.e.
+    autoregressive, tgt/src vocab non-intersection, etc) to check one's changes
+    during model development and modification. Here, I halve the size of the
+    target sequences, to demonstrate pseudo-summarization, where the src is some
+    fixed length of simple symbols "a b a b a..." and the target sequence is
+    half that size.
+    """
+
+    def halve_tgt(
+        line_iter: TGenerator[Tuple[str, str], None, None],
+    ) -> TGenerator[Tuple[str, str], None, None]:
+        return ((src, tgt[0 : int(len(tgt) / 2)]) for src, tgt in line_iter)
+
+    return halve_tgt(train_iter), halve_tgt(test_iter)
 
 
 def get_novel_sentence_iters(
@@ -2809,11 +2852,13 @@ def create_seq_dataloaders(
     max_padding: int = 128,
     is_distributed: bool = True,
     randomize: bool = True,
+    is_development: bool = False,
 ) -> Tuple[DataLoader, DataLoader]:
-    """create_seq_dataloaders returns two date iterators for training and
+    """create_seq_dataloaders returns two data iterators for training and
     validation, for which the training output is the same as the input, for
     in-language prediction. Note that this returns src/tgt lines that are
-    index-aligned; Batch then takes offsets tgt by one position.
+    index-aligned; Batch then offsets tgt by one position for tgt_y for loss
+    calculation.
 
     @input_lines_path: The path to a line-based training input. This function
     chops the novel into sentences as training data, where the input sentence is
@@ -2869,6 +2914,8 @@ def create_seq_dataloaders(
     people are standing by a chalkboard.')
     """
     train_iter, valid_iter = get_line_iters(input_lines_path, randomize=randomize)
+    if is_development:
+        train_iter, valid_iter = get_model_test_iters(train_iter, valid_iter)
 
     train_iter_map = to_map_style_dataset(train_iter)
     train_sampler = DistributedSampler(train_iter_map) if is_distributed else None
@@ -3055,6 +3102,7 @@ def train_worker(
         batch_size=config.batch_size,
         max_padding=config.max_padding,
         is_distributed=False,
+        is_development=config.is_development(),
     )
 
     optimizer = torch.optim.Adam(
@@ -3134,7 +3182,7 @@ def load_trained_model(
     )
     model.load_state_dict(torch.load(config.model_path))
 
-    log.info(
+    print(
         "Model loaded from %s. Make sure you call model.eval() and 'with "
         + "torch.no_grad()'.",
         config.model_path,
@@ -3248,13 +3296,7 @@ def check_outputs(
         log.info(
             "Target Text (Ground Truth) : " + " ".join(tgt_tokens).replace("\n", "")
         )
-        # ys = greedy_decode(
-        #     model,
-        #     rb.src,
-        #     rb.src_mask,
-        #     max_len,
-        #     vocab_src["<s>"],
-        # )
+
         beam = beam_decode(
             model,
             rb.src,

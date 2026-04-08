@@ -67,6 +67,7 @@ Beginning check-outputs with {args.config} config:
         batch_size=config.batch_size,
         max_padding=config.max_padding,
         is_distributed=False,
+        is_development=config.is_development(),
     )
 
     # Src and tgt vocab length are the same because I've been training a

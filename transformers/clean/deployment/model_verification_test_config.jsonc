@@ -19,8 +19,8 @@
     "num_epochs": 50,
     // Number of iterations to accumulate weight updates.
     "accum_iter": 10,
-    // The number of layers, 6 in the original paper. The encoder and decoder will
-    // each have this number of layers.
+    // The number of layers, 6 in the original paper. The encoder and decoder
+    // will each have this number of layers.
     "num_layers": 3,
     // The model dimension, 512 in the original paper.
     "d_model": 256,
@@ -32,16 +32,15 @@
     "h": 8,
     // The base learning rate.
     "base_lr": 1.0,
-    // Max padding is the maximum padding but also effectively the maximum sequence
-    // length on which to train.
+    // Max padding is the maximum padding but also effectively the maximum
+    // sequence length on which to train.
     "max_padding": 72,
     "warmup": 3000,
     // The prefix by which models will be persisted and read back in. Model
     // progress is saved at each epoch in a pt file with this prefix.
-    //"file_prefix": "./models/test/fb_news",
+    // "file_prefix": "./models/test/fb_news",
     "file_prefix": "./models/test/independent_test_seq",
-    // The training data path.
-    //"data_path": "./data/fb_lines.txt",
+    // The training data path. "data_path": "./data/fb_lines.txt",
     "data_path": "./data/independent_test_sequences.txt",
     // The name of the trained model, once completed.
     "model_path": "./models/test/independent_test_seq_best_val.pt",

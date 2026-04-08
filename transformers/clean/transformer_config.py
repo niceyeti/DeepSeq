@@ -79,6 +79,9 @@ class TransformerConfig(BaseModel):
     # after training. TODO: as a production parameter, this may not belong here.
     beam_length: int = int(os.environ.get("BEAM_LENGTH", default="1"))
 
+    def is_development(self) -> bool:
+        return "_test_sequences" in self.data_path
+
     def read_from_env(self) -> TransformerConfig:
         """read_from_env can be called to override any config field from env vars,
         prefixed by 'Transformer' and formatted like "TRANSFORMER_[uppercase

@@ -1,1 +1,4 @@
 **foo.txt
+**data
+!data/dependent_test_sequences.txt
+!data/independent_test_sequences.txt

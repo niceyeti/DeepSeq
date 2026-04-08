@@ -137,7 +137,8 @@ train-test-model:
 # output sequences are correct; thereby this confirms that the autoregressive
 # structure of output is not violated, that experimental changes to the model
 # work correctly on a very small example problem, and overall these tests catch
-# model-based regressions in an end-to-end test.
+# model-based regressions in an end-to-end test. It is also a general purpose
+# end-to-end test in the software sense.
 #
 # This recipe is the most useful tight-loop for development and model
 # development. I learnt from implementing this that I wouldn't ever do without
@@ -145,8 +146,8 @@ train-test-model:
 # development or research. And yes, I would do this against all complaints from
 # PMs about required setup time, and would gather their tears to add to my
 # collection of PM tears. 
-.PHONY: test-model
-test-model:
+.PHONY: check-test-model-outputs
+check-test-model-outputs:
 	ls $(TEST_MODEL_DIR) | grep "independent_test_seq_final\.pt" \
 		|| { echo "Missing $(TEST_MODEL_DIR)/independent_test_seq_final.pt. The test model must be built by running 'make train-test-model' before test-model." ; exit 1 ; }
 	source .venv/bin/activate && \
