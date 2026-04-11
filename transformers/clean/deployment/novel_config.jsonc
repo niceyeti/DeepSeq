@@ -7,8 +7,8 @@
     "num_epochs": 36,
     // Number of iterations to accumulate weight updates.
     "accum_iter": 10,
-    // The number of layers, 6 in the original paper. The encoder and decoder will
-    // each have this number of layers.
+    // The number of layers, 6 in the original paper. The encoder and decoder
+    // will each have this number of layers.
     "num_layers": 6,
     // The model dimension, 512 in the original paper.
     "d_model": 512,
@@ -20,15 +20,15 @@
     "h": 8,
     // The base learning rate.
     "base_lr": 1.0,
-    // Max padding is the maximum padding but also effectively the maximum sequence
-    // length on which to train.
+    // Max padding is the maximum padding but also effectively the maximum
+    // sequence length on which to train.
     "max_padding": 72,
     "warmup": 3000,
     // The prefix by which models will be persisted and read back in. Model
     // progress is saved at each epoch in a pt file with this prefix.
-    "file_prefix": "./models/huck_test/huck_test",
+    "file_prefix": "./trained_models/huck_test/huck_test",
     // model_path is the path to a final .pt torch-model file.
-    "model_path": "./models/huck_test/huck_test_final.pt",
+    "model_path": "./trained_models/huck_test/huck_test_final.pt",
     // The training data path.
     "data_path": "../attn/data/huckfinn_utf8.txt",
     // The device: either "gpu" or "cpu" only. See torch docs.

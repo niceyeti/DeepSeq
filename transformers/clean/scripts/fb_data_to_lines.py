@@ -135,8 +135,13 @@ def main():
     lines = get_lines(fb_data_path)
     fb_lines = parse_fb_data_lines(lines)
     lines = normalize_lines(fb_lines, normalize_en_line)
+
+    line_hashes = set()
     for line in lines:
-        print(line)
+        line_hash = hash(line)
+        if line_hash not in line_hashes:
+            print(line)
+            line_hashes.add(line_hash)
 
 
 if __name__ == "__main__":

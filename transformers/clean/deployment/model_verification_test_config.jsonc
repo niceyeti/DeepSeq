@@ -21,15 +21,15 @@
     "accum_iter": 10,
     // The number of layers, 6 in the original paper. The encoder and decoder
     // will each have this number of layers.
-    "num_layers": 3,
+    "num_layers": 2,
     // The model dimension, 512 in the original paper.
-    "d_model": 256,
+    "d_model": 128,
     "dropout": 0.1,
     // The dimension of the feed-forward network appended to each attention
     // encoder/decoder layer. Originally 2048.
-    "d_ff": 1024,
+    "d_ff": 512,
     // The number of heads in multi-headed attention components. Originally 8.
-    "h": 8,
+    "h": 4,
     // The base learning rate.
     "base_lr": 1.0,
     // Max padding is the maximum padding but also effectively the maximum
@@ -39,11 +39,11 @@
     // The prefix by which models will be persisted and read back in. Model
     // progress is saved at each epoch in a pt file with this prefix.
     // "file_prefix": "./models/test/fb_news",
-    "file_prefix": "./models/test/independent_test_seq",
+    "file_prefix": "./trained_models/test/independent_test_seq",
     // The training data path. "data_path": "./data/fb_lines.txt",
     "data_path": "./data/independent_test_sequences.txt",
     // The name of the trained model, once completed.
-    "model_path": "./models/test/independent_test_seq_best_val.pt",
+    "model_path": "./trained_models/test/independent_test_seq_best_val.pt",
     // The device: either "gpu" or "cpu" only. See torch docs.
     "device": "cpu"
 }

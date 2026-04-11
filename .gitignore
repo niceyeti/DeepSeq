@@ -11,3 +11,4 @@ autograd/resources
 **train_lines.txt
 **deletable*
 *pth
+trained_models/

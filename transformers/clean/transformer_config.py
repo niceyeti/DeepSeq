@@ -62,7 +62,7 @@ class TransformerConfig(BaseModel):
     warmup: int = 3000
     # The prefix by which models will be persisted and read back in. Model
     # progress is saved at each epoch in a pt file with this prefix.
-    file_prefix: str = "./models/test/fb_news"
+    file_prefix: str = "./trained_models/test/fb_news"
     # The training data path. Currently I am tending toward a standard of
     # line-based training examples, since this is most amenable to tooling and
     # makes the user responsible for a degree of preprocessing.
@@ -71,7 +71,7 @@ class TransformerConfig(BaseModel):
     # a saved model.
     #
     # TODO: keep an eye on this attribute, it may be derivable from file_prefix instead.
-    model_path: str = "./models/test/fb_news_final.pt"
+    model_path: str = "./trained_models/test/fb_news_final.pt"
     # Device must be either "cpu" or "gpu", and is passed directly to torch.
     # See torch docs.
     device: str = "cpu"

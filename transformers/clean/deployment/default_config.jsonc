@@ -3,12 +3,14 @@
     "batch_size": 32,
     // Whether or not training is distributed
     "distributed": false,
-    // The number of epochs for which to train, as a static value.
-    "num_epochs": 300,
+    // The number of epochs for which to execute a new trainining session, as a
+    // static value. Training is resumable by default, so resumption will
+    // restart this counter.
+    "num_epochs": 5000,
     // Number of iterations to accumulate weight updates.
     "accum_iter": 10,
-    // The number of layers, 6 in the original paper. The encoder and decoder will
-    // each have this number of layers.
+    // The number of layers, 6 in the original paper. The encoder and decoder
+    // will each have this number of layers.
     "num_layers": 6,
     // The model dimension, 512 in the original paper.
     "d_model": 512,
@@ -20,17 +22,20 @@
     "h": 8,
     // The base learning rate.
     "base_lr": 1.0,
-    // Max padding is the maximum padding but also effectively the maximum sequence
-    // length on which to train.
+    // Max padding is the maximum padding but also effectively the maximum
+    // sequence length on which to train.
     "max_padding": 72,
     "warmup": 3000,
     // The prefix by which models will be persisted and read back in. Model
-    // progress is saved at each epoch in a pt file with this prefix.
-    "file_prefix": "./models/fb/fb_news",
+    // progress is saved at each epoch in a pt file with this prefix for each
+    // best-training epoch and best-validation epoch. The training driver will
+    // also resume from the model saved with this prefix and suffixed
+    // "_best_train.pt" (this claim will self-destruct lol).
+    "file_prefix": "./trained_models/fb/fb_news",
     // The training data path.
     "data_path": "./data/fb_lines.txt",
     // The name of the trained model, once completed.
-    "model_path": "./models/fb/fb_news_best_train.pt",
+    "model_path": "./trained_models/fb/fb_news_best_val.pt",
     // The device: either "gpu" or "cpu" only. See torch docs.
     "device": "cpu"
 }

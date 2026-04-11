@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 import architecture
 from architecture import EpochMetrics, EncoderDecoderModel
 from transformer_config import TransformerConfig
+from visualization import plot_losses
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
 log = logging.getLogger()
@@ -56,6 +57,10 @@ def main():
         1) set CONFIG_PATH to the path to a config for a model to train or load
         2) pass nothing: by default this will train on a default dataset used as
            a smoke test.
+
+    Important: this code checks if a "_best_train.pt" model already exists to
+    support resumable training from the last-best training model saved by a
+    previous training session.
     """
 
     parser = argparse.ArgumentParser(
@@ -113,12 +118,11 @@ Beginning training with {args.config} config:
     architecture.save_vocab(vocab, f"{config.file_prefix}.pth")
 
     loss_path = Path(f"{config.file_prefix}.loss")
-    # zero the existing loss file
-    loss_path.write_text("", encoding="utf8", newline="")
+    loss_path.touch()
 
     only_once = "ONCE" in os.environ
 
-    def persist_epoch(metrics: EpochMetrics, model: EncoderDecoderModel):
+    def persist_epoch(current_epoch: EpochMetrics, model: EncoderDecoderModel):
         """persist_epoch saves the metrics for the epoch to file so that once
         training is completed, they can be read and plotted. It also tracks the
         best validation error and saves the model weights, so this is the
@@ -138,20 +142,22 @@ Beginning training with {args.config} config:
 
         # Save the minimum training error
         min_train_error = min(map(lambda l: l.training_loss, losses), default=99999)
-        if metrics.training_loss < min_train_error:
+        if current_epoch.training_loss < min_train_error:
             torch.save(model.state_dict(), f"{config.file_prefix}_best_train.pt")
 
         # Save the minimum validation error
-        min_validation_error = min(
-            map(lambda l: l.validation_loss, losses), default=99999
-        )
-        if metrics.validation_loss < min_validation_error:
+        min_val_error = min(map(lambda l: l.validation_loss, losses), default=99999)
+        if current_epoch.validation_loss < min_val_error:
             torch.save(model.state_dict(), f"{config.file_prefix}_best_val.pt")
 
         # Append the new metrics. Note this should be done after comparing the
         # losses on file, or the new metrics would be in the compared set.
+        max_recorded_epoch = max(map(lambda l: l.epoch, losses), default=-1)
+        current_epoch.epoch = max(current_epoch.epoch, max_recorded_epoch)
         with open(loss_path, "a+", encoding="utf8") as loss_file:
-            loss_file.write(metrics.model_dump_json(indent=None) + "\n")
+            # Get the max epoch from any pre-existing losses from a separate
+            # training session, before using the passed metrics' epoch-count.
+            loss_file.write(current_epoch.model_dump_json(indent=None) + "\n")
 
         if only_once:
             # For debugging, it is often useful to max the log level and bail

@@ -12,7 +12,7 @@ SHELL:=/bin/bash
 
 DATA_PATH?=./data/fb_lines.txt
 
-MODEL_DIR=./models
+MODEL_DIR=./trained_models
 TEST_MODEL_DIR=$(MODEL_DIR)/test
 
 CONFIG_PATH?=./deployment/default_config.jsonc
@@ -42,7 +42,7 @@ BEAM_DEBUG?=0
 clean:
 	rm -rf .venv
 # Also blow away the temporary test model
-	rm -rf ./models/huck_test
+	rm -rf ./trained_models/huck_test
 
 
 # Rebuilds the venv. Currently the only known working combination is torch=2.3,
@@ -126,6 +126,7 @@ unit-tests:
 # to build the test model.
 .PHONY: train-test-model
 train-test-model:
+	rm -f $(TEST_MODEL_DIR)/*
 	source .venv/bin/activate && \
 		LOG_LEVEL=$(LOG_LEVEL) \
 		python training_driver.py -c $(TEST_MODEL_CONFIG_PATH)
@@ -166,7 +167,8 @@ fmt:
 # These recipes are all experimental and not guaranteed up to date.
 ###############################################################################
 
+# Converts ABLE fb-data format to line-based training file.
 .PHONY: fb-data
 fb-data:
-	FB_DATA_PATH=./data/fb_data.py \
+	FB_DATA_PATH=./data/usatoday_fb.py \
 		python ./scripts/fb_data_to_lines.py > ./data/fb_lines.txt

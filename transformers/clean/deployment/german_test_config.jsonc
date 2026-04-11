@@ -26,7 +26,7 @@
     "warmup": 3000,
     // The prefix by which models will be persisted and read back in. Model
     // progress is saved at each epoch in a pt file with this prefix.
-    "file_prefix": "eng_to_deu",
+    "file_prefix": "./trained_models/eng_to_deu",
     // The training data path.
     "data_path": "",
     // The device: either "gpu" or "cpu" only. See torch docs.

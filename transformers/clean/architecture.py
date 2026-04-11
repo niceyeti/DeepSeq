@@ -8,7 +8,6 @@ import time
 
 # FUTURE: would like to dump python dataclass usage and use pydantic instead.
 from dataclasses import dataclass
-from pydantic import BaseModel
 from typing import Generator as TGenerator, Tuple, List, Callable
 from pathlib import Path
 
@@ -22,7 +21,6 @@ from torchtext.vocab import Vocab
 from torchtext.vocab import build_vocab_from_iterator
 import torchtext.datasets as datasets
 from torch.utils.data.distributed import DistributedSampler
-
 import torchinfo
 import pandas as pd
 import altair as alt
@@ -30,6 +28,7 @@ import spacy
 from spacy import Language
 
 from transformer_config import TransformerConfig
+from models import EpochMetrics, TrainState
 
 logging.basicConfig(level=os.environ.get("LOG_LEVEL", "WARNING").upper())
 log = logging.getLogger()
@@ -1497,15 +1496,6 @@ class Batch:
         return tgt_mask
 
 
-class TrainState:
-    """Track number of steps, examples, and tokens processed"""
-
-    step: int = 0  # Steps in the current epoch
-    accum_step: int = 0  # Number of gradient accumulation steps
-    samples: int = 0  # total # of examples used
-    tokens: int = 0  # total # of tokens processed
-
-
 def run_epoch(
     data_iter: TGenerator[Batch, None, None],
     model: EncoderDecoderModel,
@@ -2533,33 +2523,6 @@ def collate_batch(
     return (src, tgt)
 
 
-"""
-JW: the Ai summary is actually pretty good for explaining some of this:
-
-    Why you might see get_stoi() in spaCy examples Some online tutorials for
-    deep learning with spaCy and PyTorch may show code where get_stoi() is used.
-    In these cases, spaCy is used only for its tokenization. The resulting
-    tokens are then passed to a torchtext Vocab object, which has its own
-    methods for converting strings to integers for deep learning models.
-
-    For example:
-
-        import spacy from torchtext.vocab import build_vocab_from_iterator
-
-        # Example using spaCy for tokenization and torchtext for vocabulary nlp
-        = spacy.load("en_core_web_sm") corpus = ["Hello world!", "This is a
-        test."] tokenized_corpus = [[token.text for token in nlp(text)] for text
-        in corpus]
-
-        # Build the vocabulary using torchtext vocab =
-        build_vocab_from_iterator(tokenized_corpus, specials=["<unk>"])
-
-        # Now you can use the `get_stoi()` method on the torchtext vocab object
-        stoi = vocab.get_stoi() print(stoi)
-
-"""
-
-
 def create_dataloaders(
     device,
     vocab_src,
@@ -2765,6 +2728,7 @@ def get_line_iters(
         ofile.writelines("\n".join(lines))
 
     if randomize:
+        print("Shuffling training lines before train/val splitting...")
         random.shuffle(lines)
 
     splitIndex = int(len(lines) * split)
@@ -3043,18 +3007,6 @@ def create_huckfinn_dataloaders(
     return train_dataloader, valid_dataloader
 
 
-class EpochMetrics(BaseModel):
-    """
-    EpochMetrics is a small serializable class for reporting back per-epoch
-    metrics: training and validation loss. This is primarily for visualization
-    and inspection of performance.
-    """
-
-    epoch: int
-    training_loss: float
-    validation_loss: float
-
-
 def train_worker(
     vocab: Vocab,
     spacy_en: Language,
@@ -3079,15 +3031,33 @@ def train_worker(
         f"Training params: pad_idx={pad_idx} vocab-len={len(vocab)}\nconfig={config.model_dump_json(indent=2)}"
     )
 
-    model = make_encdec_model(
-        len(vocab),
-        len(vocab),
-        N=num_layers,
-        d_model=d_model,
-        d_ff=config.d_ff,
-        h=config.h,
-        dropout=config.dropout,
-    )
+    # Resumability: here the "_best_train.pt" model is loaded by default, if any
+    # exists. This supports resumability by default, unless the user deletes all
+    # its previous training artifacts and losses.
+    model: EncoderDecoderModel
+    best_train_model_path = Path(config.file_prefix + "_best_train.pt")
+    if best_train_model_path.exists():
+        print(
+            f"Existing training model found and reloading from: {best_train_model_path}"
+        )
+        model = load_trained_model(
+            src_vocab_size=len(vocab),
+            tgt_vocab_size=len(vocab),
+            config=config,
+        )
+    else:
+        print(
+            f"Building fresh new model; no existing training model found at {best_train_model_path}."
+        )
+        model = make_encdec_model(
+            len(vocab),
+            len(vocab),
+            N=num_layers,
+            d_model=d_model,
+            d_ff=config.d_ff,
+            h=config.h,
+            dropout=config.dropout,
+        )
     is_main_process = True
 
     # LabelSmoothing provides regularization. See and run
@@ -3183,9 +3153,8 @@ def load_trained_model(
     model.load_state_dict(torch.load(config.model_path))
 
     print(
-        "Model loaded from %s. Make sure you call model.eval() and 'with "
-        + "torch.no_grad()'.",
-        config.model_path,
+        f"Model loaded from {config.model_path}. For inference, ensure "
+        + "you call model.eval() and 'with torch.no_grad()'."
     )
 
     return model
@@ -3319,184 +3288,3 @@ def check_outputs(
         for output in top_outputs:
             print(f"  {output.replace("\n", "")}")
         print("")
-
-
-def run_model_example(n_examples=5):
-    global vocab_src, vocab_tgt, spacy_de, spacy_en
-
-    log.info("Preparing Data ...")
-    _, valid_dataloader = create_dataloaders(
-        torch.device("cpu"),
-        vocab_src,
-        vocab_tgt,
-        spacy_de,
-        spacy_en,
-        batch_size=1,
-        is_distributed=False,
-    )
-
-    log.info("Loading Trained Model ...")
-
-    model = make_encdec_model(len(vocab_src), len(vocab_tgt), N=6)
-    model.load_state_dict(
-        torch.load("multi30k_model_final.pt", map_location=torch.device("cpu"))
-    )
-
-    log.info("Checking Model Outputs:")
-    example_data = check_outputs(
-        valid_dataloader, model, vocab_src, vocab_tgt, n_examples=n_examples
-    )
-    return model, example_data
-
-
-def mtx2df(m, max_row, max_col, row_tokens, col_tokens):
-    """Convert a dense matrix to a data frame with row and column indices."""
-    return pd.DataFrame(
-        [
-            (
-                r,
-                c,
-                float(m[r, c]),
-                "%.3d %s" % (r, row_tokens[r] if len(row_tokens) > r else "<blank>"),
-                "%.3d %s" % (c, col_tokens[c] if len(col_tokens) > c else "<blank>"),
-            )
-            for r in range(m.shape[0])
-            for c in range(m.shape[1])
-            if r < max_row and c < max_col
-        ],
-        # if float(m[r,c]) != 0 and r < max_row and c < max_col],
-        columns=["row", "column", "value", "row_token", "col_token"],
-    )
-
-
-def attn_map(attn, layer, head, row_tokens, col_tokens, max_dim=30):
-    df = mtx2df(
-        attn[0, head].data,
-        max_dim,
-        max_dim,
-        row_tokens,
-        col_tokens,
-    )
-    return (
-        alt.Chart(data=df)
-        .mark_rect()
-        .encode(
-            x=alt.X("col_token", axis=alt.Axis(title="")),
-            y=alt.Y("row_token", axis=alt.Axis(title="")),
-            color="value",
-            tooltip=["row", "column", "value", "row_token", "col_token"],
-        )
-        .properties(height=400, width=400)
-        .interactive()
-    )
-
-
-def get_encoder(model, layer):
-    return model.encoder.layers[layer].self_attn.attn
-
-
-def get_decoder_self(model, layer):
-    return model.decoder.layers[layer].self_attn.attn
-
-
-def get_decoder_src(model, layer):
-    return model.decoder.layers[layer].src_attn.attn
-
-
-def visualize_layer(model, layer, getter_fn, ntokens, row_tokens, col_tokens):
-    # ntokens = last_example[0].ntokens
-    attn = getter_fn(model, layer)
-    n_heads = attn.shape[1]
-    charts = [
-        attn_map(
-            attn,
-            0,
-            h,
-            row_tokens=row_tokens,
-            col_tokens=col_tokens,
-            max_dim=ntokens,
-        )
-        for h in range(n_heads)
-    ]
-    assert n_heads == 8
-    return alt.vconcat(
-        charts[0]
-        # | charts[1]
-        | charts[2]
-        # | charts[3]
-        | charts[4]
-        # | charts[5]
-        | charts[6]
-        # | charts[7] layer + 1 due to 0-indexing
-    ).properties(title="Layer %d" % (layer + 1))
-
-
-def viz_encoder_self():
-    model, example_data = run_model_example(n_examples=1)
-    # batch object for the final example
-    example = example_data[len(example_data) - 1]
-
-    layer_viz = [
-        visualize_layer(
-            model, layer, get_encoder, len(example[1]), example[1], example[1]
-        )
-        for layer in range(6)
-    ]
-    return alt.hconcat(
-        layer_viz[0]
-        # & layer_viz[1]
-        & layer_viz[2]
-        # & layer_viz[3]
-        & layer_viz[4]
-        # & layer_viz[5]
-    )
-
-
-def viz_decoder_self():
-    model, example_data = run_model_example(n_examples=1)
-    example = example_data[len(example_data) - 1]
-
-    layer_viz = [
-        visualize_layer(
-            model,
-            layer,
-            get_decoder_self,
-            len(example[1]),
-            example[1],
-            example[1],
-        )
-        for layer in range(6)
-    ]
-    return alt.hconcat(
-        layer_viz[0]
-        & layer_viz[1]
-        & layer_viz[2]
-        & layer_viz[3]
-        & layer_viz[4]
-        & layer_viz[5]
-    )
-
-
-def viz_decoder_src():
-    model, example_data = run_model_example(n_examples=1)
-    example = example_data[len(example_data) - 1]
-
-    layer_viz = [
-        visualize_layer(
-            model,
-            layer,
-            get_decoder_src,
-            max(len(example[1]), len(example[2])),
-            example[1],
-            example[2],
-        )
-        for layer in range(6)
-    ]
-    return alt.hconcat(
-        layer_viz[0]
-        & layer_viz[1]
-        & layer_viz[2]
-        & layer_viz[3]
-        & layer_viz[4]
-        & layer_viz[5]
-    )
