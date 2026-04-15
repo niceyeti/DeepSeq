@@ -5,7 +5,7 @@
     "distributed": false,
     // The number of epochs for which to execute a new trainining session, as a
     // static value. Training is resumable by default, so resumption will
-    // restart this counter.
+    // restart this counter. 100 is plenty for small dataets.
     "num_epochs": 5000,
     // Number of iterations to accumulate weight updates.
     "accum_iter": 10,

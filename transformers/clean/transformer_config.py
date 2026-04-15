@@ -59,6 +59,7 @@ class TransformerConfig(BaseModel):
     # Max padding is the maximum padding but also effectively the maximum sequence
     # length on which to train.
     max_padding: int = 72
+    # See implementation, warmup is used to modify the lr.
     warmup: int = 3000
     # The prefix by which models will be persisted and read back in. Model
     # progress is saved at each epoch in a pt file with this prefix.

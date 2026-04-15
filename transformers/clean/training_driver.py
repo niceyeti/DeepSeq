@@ -122,6 +122,8 @@ Beginning training with {args.config} config:
 
     only_once = "ONCE" in os.environ
 
+    # TODO: review and revisit resumption logic, as it resumes the model weights
+    # but not the learning rate state(s).
     def persist_epoch(current_epoch: EpochMetrics, model: EncoderDecoderModel):
         """persist_epoch saves the metrics for the epoch to file so that once
         training is completed, they can be read and plotted. It also tracks the
@@ -152,8 +154,9 @@ Beginning training with {args.config} config:
 
         # Append the new metrics. Note this should be done after comparing the
         # losses on file, or the new metrics would be in the compared set.
-        max_recorded_epoch = max(map(lambda l: l.epoch, losses), default=-1)
-        current_epoch.epoch = max(current_epoch.epoch, max_recorded_epoch)
+        max_recorded_epoch = max(map(lambda e: e.epoch, losses), default=-1)
+        resumed_epoch = max(current_epoch.epoch, max_recorded_epoch + 1)
+        current_epoch.epoch = resumed_epoch
         with open(loss_path, "a+", encoding="utf8") as loss_file:
             # Get the max epoch from any pre-existing losses from a separate
             # training session, before using the passed metrics' epoch-count.
