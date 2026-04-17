@@ -12,8 +12,15 @@ class EpochMetrics(BaseModel):
     """
 
     epoch: int
+
     training_loss: float
+    training_tokens: float
+    training_batches: float
+
     validation_loss: float
+    validation_tokens: float
+    validation_batches: float
+
     train_duration: float
     validation_duration: float
     dt_8601: str

@@ -7,6 +7,7 @@ import copy
 import time
 import datetime
 
+from dataclasses import dataclass
 from typing import Generator as TGenerator, Tuple, List, Callable
 from pathlib import Path
 
@@ -25,7 +26,6 @@ import pandas as pd
 import altair as alt
 import spacy
 from spacy import Language
-from pydantic.dataclasses import dataclass
 
 from transformer_config import TransformerConfig
 from models import EpochMetrics, TrainState
@@ -1505,13 +1505,14 @@ def run_epoch(
     mode="train",
     accum_iter=1,
     train_state=TrainState(),
-) -> Tuple[float, TrainState]:
+) -> Tuple[float, float, float, TrainState]:
     """Train a single epoch over the entire batch iterator.
 
     NOTE: remember that Batch offsets tgt by one.
     """
     start = time.time()
     total_tokens = 0
+    total_batches = 0
     total_loss = 0
     tokens = 0
     n_accum = 0
@@ -1533,6 +1534,7 @@ def run_epoch(
                 train_state.accum_step += 1
             scheduler.step()
 
+        total_batches += 1
         total_loss += loss
         total_tokens += batch.ntokens
         tokens += batch.ntokens
@@ -1550,7 +1552,7 @@ def run_epoch(
             tokens = 0
         del loss
         del loss_node
-    return total_loss / total_tokens, train_state
+    return total_loss / total_tokens, total_batches, total_tokens, train_state
 
 
 # This corresponds to increasing the learning rate linearly for the first
@@ -3090,7 +3092,7 @@ def train_worker(
         model.train()
         train_start = datetime.datetime.now(datetime.UTC)
         log.info(f"CPU Epoch {epoch} Training ====")
-        train_loss, train_state = run_epoch(
+        train_loss, train_batches, train_tokens, train_state = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in train_dataloader),
             model,
             SimpleLossCompute(model.generator, criterion),
@@ -3112,7 +3114,7 @@ def train_worker(
         log.info(f"Epoch {epoch} Validation ====")
         validation_start = datetime.datetime.now()
         model.eval()
-        validation_loss, _ = run_epoch(
+        validation_loss, val_batches, val_tokens, _ = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in valid_dataloader),
             model,
             SimpleLossCompute(model.generator, criterion),
@@ -3132,7 +3134,11 @@ def train_worker(
             EpochMetrics(
                 epoch=epoch,
                 training_loss=train_loss,
+                training_tokens=train_tokens,
+                training_batches=train_batches,
                 validation_loss=validation_loss,
+                validation_tokens=val_tokens,
+                validation_batches=val_batches,
                 train_duration=f"{training_duration}",
                 validation_duration=f"{validation_duration}",
                 dt_8601=datetime.datetime.now(datetime.UTC).isoformat(),
