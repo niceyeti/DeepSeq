@@ -152,11 +152,8 @@ Beginning training with {args.config} config:
         if current_epoch.validation_loss < min_val_error:
             torch.save(model.state_dict(), f"{config.file_prefix}_best_val.pt")
 
-        # Append the new metrics. Note this should be done after comparing the
-        # losses on file, or the new metrics would be in the compared set.
-        max_recorded_epoch = max(map(lambda e: e.epoch, losses), default=-1)
-        resumed_epoch = max(current_epoch.epoch, max_recorded_epoch + 1)
-        current_epoch.epoch = resumed_epoch
+        # Append the new metric.
+        current_epoch.epoch = max(map(lambda e: e.epoch, losses), default=0)
         with open(loss_path, "a+", encoding="utf8") as loss_file:
             # Get the max epoch from any pre-existing losses from a separate
             # training session, before using the passed metrics' epoch-count.
