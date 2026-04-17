@@ -5,7 +5,6 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 import altair as alt
-
 import torch
 
 from models import EpochMetrics

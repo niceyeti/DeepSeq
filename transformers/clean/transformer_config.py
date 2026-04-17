@@ -42,8 +42,8 @@ class TransformerConfig(BaseModel):
     num_epochs: int = 36
     # Number of iterations to accumulate weight updates.
     accum_iter: int = 10
-    # The number of layers, 6 in the original paper. The encoder and decoder will
-    # each have this number of layers.
+    # The number of layers, 6 in the original paper. The encoder and decoder
+    # will each have this number of layers.
     num_layers: int = 6
     # The model dimension, 512 in the original paper.
     d_model: int = 512
@@ -56,8 +56,8 @@ class TransformerConfig(BaseModel):
     h: int = 8
     # The base learning rate.
     base_lr: float = 1.0
-    # Max padding is the maximum padding but also effectively the maximum sequence
-    # length on which to train.
+    # Max padding is the maximum padding but also effectively the maximum
+    # sequence length on which to train.
     max_padding: int = 72
     # See implementation, warmup is used to modify the lr.
     warmup: int = 3000
@@ -68,28 +68,30 @@ class TransformerConfig(BaseModel):
     # line-based training examples, since this is most amenable to tooling and
     # makes the user responsible for a degree of preprocessing.
     data_path: str = "./data/fb_lines.txt"
-    # The path to a saved model. This is only used in inference/prod to load
-    # a saved model.
+    # The path to a saved model. This is only used in inference/prod to load a
+    # saved model.
     #
-    # TODO: keep an eye on this attribute, it may be derivable from file_prefix instead.
+    # TODO: keep an eye on this attribute, it may be derivable from file_prefix
+    # instead.
     model_path: str = "./trained_models/test/fb_news_final.pt"
-    # Device must be either "cpu" or "gpu", and is passed directly to torch.
-    # See torch docs.
+    # Device must be either "cpu" or "gpu", and is passed directly to torch. See
+    # torch docs.
     device: str = "cpu"
-    # beam_length is a production/inference time parameter for a specific operation
-    # after training. TODO: as a production parameter, this may not belong here.
+    # beam_length is a production/inference time parameter for a specific
+    # operation after training. TODO: as a production parameter, this may not
+    # belong here.
     beam_length: int = int(os.environ.get("BEAM_LENGTH", default="1"))
 
     def is_development(self) -> bool:
         return "_test_sequences" in self.data_path
 
     def read_from_env(self) -> TransformerConfig:
-        """read_from_env can be called to override any config field from env vars,
-        prefixed by 'Transformer' and formatted like "TRANSFORMER_[uppercase
-        attribute]=[new value]", i.e. "TRANSFORMER_D_MODEL=256". The string
-        value of the env var is passed to the ctor for that field's type, thus
-        inheriting pythonic semantics for every field and only support basic
-        types.
+        """read_from_env can be called to override any config field from env
+        vars, prefixed by 'Transformer' and formatted like
+        "TRANSFORMER_[uppercase attribute]=[new value]", i.e.
+        "TRANSFORMER_D_MODEL=256". The string value of the env var is passed to
+        the ctor for that field's type, thus inheriting pythonic semantics for
+        every field and only support basic types.
 
         I'm only doing this because I'm unaware of a builtin way to do it using
         pydantic, but this is also the simplest."""

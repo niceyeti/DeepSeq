@@ -5,9 +5,8 @@ import logging
 import math
 import copy
 import time
+import datetime
 
-# FUTURE: would like to dump python dataclass usage and use pydantic instead.
-from dataclasses import dataclass
 from typing import Generator as TGenerator, Tuple, List, Callable
 from pathlib import Path
 
@@ -26,6 +25,7 @@ import pandas as pd
 import altair as alt
 import spacy
 from spacy import Language
+from pydantic.dataclasses import dataclass
 
 from transformer_config import TransformerConfig
 from models import EpochMetrics, TrainState
@@ -3088,6 +3088,7 @@ def train_worker(
 
     for epoch in range(num_epochs):
         model.train()
+        train_start = datetime.datetime.now(datetime.UTC)
         log.info(f"CPU Epoch {epoch} Training ====")
         train_loss, train_state = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in train_dataloader),
@@ -3099,10 +3100,17 @@ def train_worker(
             accum_iter=config.accum_iter,
             train_state=train_state,
         )
-        log.info("Epoch %d training loss: %f", epoch, train_loss)
+        training_duration = datetime.datetime.now(datetime.UTC) - train_start
+        log.info(
+            "Epoch %d  Training loss: %f  Elapsed time: %s",
+            epoch,
+            train_loss,
+            training_duration,
+        )
         torch.cuda.empty_cache()
 
         log.info(f"Epoch {epoch} Validation ====")
+        validation_start = datetime.datetime.now()
         model.eval()
         validation_loss, _ = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in valid_dataloader),
@@ -3112,11 +3120,22 @@ def train_worker(
             DummyScheduler(),
             mode="eval",
         )
-        log.info("Epoch %d validation loss: %f", epoch, validation_loss)
+        validation_duration = datetime.datetime.now(datetime.UTC) - validation_start
+        log.info(
+            "Epoch %d  validation loss: %f  Validation duration: %s",
+            epoch,
+            validation_loss,
+            validation_duration,
+        )
 
         report_epoch(
             EpochMetrics(
-                epoch=epoch, training_loss=train_loss, validation_loss=validation_loss
+                epoch=epoch,
+                training_loss=train_loss,
+                validation_loss=validation_loss,
+                train_duration=f"{training_duration}",
+                validation_duration=f"{validation_duration}",
+                dt_8601=datetime.datetime.now(datetime.UTC).isoformat(),
             ),
             model,
         )

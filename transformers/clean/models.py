@@ -14,6 +14,9 @@ class EpochMetrics(BaseModel):
     epoch: int
     training_loss: float
     validation_loss: float
+    train_duration: float
+    validation_duration: float
+    dt_8601: str
 
 
 class TrainState:
