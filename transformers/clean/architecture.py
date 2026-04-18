@@ -3112,7 +3112,7 @@ def train_worker(
         torch.cuda.empty_cache()
 
         log.info(f"Epoch {epoch} Validation ====")
-        validation_start = datetime.datetime.now()
+        validation_start = datetime.datetime.now(datetime.UTC)
         model.eval()
         validation_loss, val_batches, val_tokens, _ = run_epoch(
             (Batch(b[0], b[1], pad_idx) for b in valid_dataloader),
@@ -3139,8 +3139,8 @@ def train_worker(
                 validation_loss=validation_loss,
                 validation_tokens=val_tokens,
                 validation_batches=val_batches,
-                train_duration=f"{training_duration}",
-                validation_duration=f"{validation_duration}",
+                train_duration=str(training_duration),
+                validation_duration=str(validation_duration),
                 dt_8601=datetime.datetime.now(datetime.UTC).isoformat(),
             ),
             model,

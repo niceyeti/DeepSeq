@@ -21,8 +21,8 @@ class EpochMetrics(BaseModel):
     validation_tokens: float
     validation_batches: float
 
-    train_duration: float
-    validation_duration: float
+    train_duration: str
+    validation_duration: str
     dt_8601: str
 
 
