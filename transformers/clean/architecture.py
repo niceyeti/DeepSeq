@@ -1880,10 +1880,10 @@ def beam_decode(
 
     @dataclass
     class BeamItem:
-        # The word sequence, as a tensor of size (seqlen x 1)
-        ys: torch.Tensor
-        # This sequence's accumulated probability, i.e. the sum of log-probs.
-        prob: float
+        ys: torch.Tensor  # The word sequence, as a tensor of size (seqlen x 1)
+        prob: (
+            float  # This sequence's accumulated probability, i.e. the sum of log-probs.
+        )
 
     model.ensure_inference_mode()
 
@@ -1973,6 +1973,13 @@ def beam_decode(
             # len of the sequence as it is extended one at a time. Note it is
             # the same size as ys, since we haven't predicted the next word
             # until below. The output is still in embedding-space.
+
+            # log.debug(
+            #     f"encoded_src={encoded_src.size()} src_mask={src_mask.size()} ys={beam_item.ys.size()} ys_mask={ys_mask.size()}"
+            # )
+            # exit()
+
+            # DEBUG:root:encoded_src=torch.Size([1, 72, 512]) src_mask=torch.Size([1, 1, 72]) ys=torch.Size([1, 72]) ys_mask=torch.Size([1, 72, 72])
             out = model.decode(encoded_src, src_mask, beam_item.ys, ys_mask)
             # The generator accepts (b x seqlen x d_model), projects it and runs
             # through log-softmax to return (b x seqlen x vocab_size). Each
@@ -2441,6 +2448,60 @@ def save_vocab(vocab: Vocab, vocab_path: Path):
     torch.save(vocab, vocab_path)
 
 
+def to_padded_tensor(
+    token_ids: List[int],
+    tokens: List[str],
+    max_padding: int,
+    bs_id: int,
+    eos_id: int,
+    pad_id: int,
+    device: str,
+) -> torch.Tensor:
+    """to_padded_tensor takes a sequence of token ids, prepending a bos,
+    appending the eos id, and then padding the remainder with the padding id."""
+
+    # Plus 2 to account for bs and eos id added later.
+    if (len(token_ids) + 2) > max_padding:
+        log.warning(
+            "processed len %d > max_padding of %d (includes bs and eos tokens) in collate_batch for seq %s, truncating training sequence",
+            len(token_ids),
+            max_padding,
+            tokens,
+        )
+        token_ids = token_ids[: (max_padding - 2)]
+    # Minus 2 to account for the bs and eos tokens.
+    num_pads = (max_padding - 2) - len(token_ids)
+
+    # Create the initial sentence tensor consisting of the token ids,
+    # prepended by a begin-token and appended by an end-token.
+    bs = torch.tensor([bs_id], device=device)  # <s> token id
+    eos = torch.tensor([eos_id], device=device)  # </s> token id
+
+    processed = torch.cat(
+        [
+            bs,
+            torch.tensor(
+                token_ids,
+                dtype=torch.int64,
+                device=device,
+            ),
+            eos,
+        ],
+        0,
+    )
+
+    # Append padding ids to the remaining length of the tensor.
+    return pad(
+        processed,
+        (
+            0,
+            num_pads,
+        ),
+        mode="constant",
+        value=pad_id,
+    )
+
+
 def collate_batch(
     batch,
     src_tokenizer: Callable[[str], List[str]],
@@ -2459,48 +2520,48 @@ def collate_batch(
     batching to make sure we search over enough sentences to find tight batches.
     """
 
-    def to_padded_tensor(token_ids: List[int], tokens: List[str]) -> torch.Tensor:
-        """to_padded_tensor takes a sequence of token ids, prepending a bos,
-        appending the eos id, and then padding the remainder with the padding
-        id."""
+    # def to_padded_tensor(token_ids: List[int], tokens: List[str]) -> torch.Tensor:
+    #     """to_padded_tensor takes a sequence of token ids, prepending a bos,
+    #     appending the eos id, and then padding the remainder with the padding
+    #     id."""
 
-        # Plus 2 to account for bs and eos id added later.
-        if (len(token_ids) + 2) > max_padding:
-            log.warning(
-                "processed len %d > max_padding of %d (includes bs and eos tokens) in collate_batch for seq %s, truncating training sequence",
-                len(token_ids),
-                max_padding,
-                tokens,
-            )
-            token_ids = token_ids[: (max_padding - 2)]
-        # Minus 2 to account for the bs and eos tokens.
-        num_pads = (max_padding - 2) - len(token_ids)
+    #     # Plus 2 to account for bs and eos id added later.
+    #     if (len(token_ids) + 2) > max_padding:
+    #         log.warning(
+    #             "processed len %d > max_padding of %d (includes bs and eos tokens) in collate_batch for seq %s, truncating training sequence",
+    #             len(token_ids),
+    #             max_padding,
+    #             tokens,
+    #         )
+    #         token_ids = token_ids[: (max_padding - 2)]
+    #     # Minus 2 to account for the bs and eos tokens.
+    #     num_pads = (max_padding - 2) - len(token_ids)
 
-        # Create the initial sentence tensor consisting of the token ids,
-        # prepended by a begin-token and appended by an end-token.
-        processed = torch.cat(
-            [
-                bs,
-                torch.tensor(
-                    token_ids,
-                    dtype=torch.int64,
-                    device=device,
-                ),
-                eos,
-            ],
-            0,
-        )
+    #     # Create the initial sentence tensor consisting of the token ids,
+    #     # prepended by a begin-token and appended by an end-token.
+    #     processed = torch.cat(
+    #         [
+    #             bs,
+    #             torch.tensor(
+    #                 token_ids,
+    #                 dtype=torch.int64,
+    #                 device=device,
+    #             ),
+    #             eos,
+    #         ],
+    #         0,
+    #     )
 
-        # Append padding ids to the remaining length of the tensor.
-        return pad(
-            processed,
-            (
-                0,
-                num_pads,
-            ),
-            mode="constant",
-            value=pad_id,
-        )
+    #     # Append padding ids to the remaining length of the tensor.
+    #     return pad(
+    #         processed,
+    #         (
+    #             0,
+    #             num_pads,
+    #         ),
+    #         mode="constant",
+    #         value=pad_id,
+    #     )
 
     bs = torch.tensor([bs_id], device=device)  # <s> token id
     eos = torch.tensor([eos_id], device=device)  # </s> token id
@@ -2511,12 +2572,16 @@ def collate_batch(
     for _src, _tgt in batch:
         src_tokens = src_tokenizer(_src)
         src_ids = src_vocab(src_tokens)
-        processed_src = to_padded_tensor(src_ids, src_tokens)
+        processed_src = to_padded_tensor(
+            src_ids, src_tokens, max_padding, bs, eos, pad_id, device
+        )
         src_list.append(processed_src)
 
         tgt_tokens = tgt_tokenizer(_tgt)
         tgt_ids = tgt_vocab(tgt_tokens)
-        processed_tgt = to_padded_tensor(tgt_ids, tgt_tokens)
+        processed_tgt = to_padded_tensor(
+            tgt_ids, tgt_tokens, max_padding, bs, eos, pad_id, device
+        )
         tgt_list.append(processed_tgt)
 
     src = torch.stack(src_list)
@@ -3189,6 +3254,197 @@ def average(model, models):
     "Average models into model"
     for ps in zip(*[m.params() for m in [model] + models]):
         ps[0].copy_(torch.sum(*ps[1:]) / len(ps[1:]))
+
+
+def interact(
+    model,
+    vocab: Vocab,
+    spacy_en,
+    pad_idx=2,
+    eos_string="</s>",
+):
+    # TODO: move me to some vocab util wrapper of Vocab.
+    def output_to_sequence(out: torch.Tensor) -> str:
+        """A small driver to convert an output tensor of token ids back to
+        words.
+
+        Args:
+            * out: a tensor of size (seqlen)
+        """
+        log.info(f"out={out.size()}")
+        return (
+            " ".join([vocab.get_itos()[x] for x in out if x != pad_idx]).split(
+                eos_string, 1
+            )[0]
+            + eos_string
+        )
+
+    import re
+
+    def get_tokens() -> List[str]:
+        while True:
+            print(
+                "Input will be lowercased and stripped of non-alpha, and words must exist in the train/val vocab."
+            )
+            input_sentence = input(
+                "Enter a sequence of words representing a sentence: "
+            ).lower()
+            input_sentence = re.sub(r"[^a-zA-Z0-9 ]", "", input_sentence)
+            tokens = input_sentence.split()
+            # Check for invalid tokens and kick back to start if any are
+            # detected.
+            invalid_tokens = list(filter(lambda token: token not in vocab, tokens))
+            if any(invalid_tokens):
+                print("Unknown tokens detected: ", invalid_tokens)
+                print("Retry with in-vocab tokens.")
+                continue
+
+            return tokens
+
+    def get_batch(tokens: List[str]) -> torch.tensor:
+        """get_batch batchifies the tokens. Most of this is a hack to reuse
+        existing current data-loading utilities and is likely to break if they
+        are changed."""
+
+        # Write the existing tokens a temp file, simply to reuse the
+        # create-dataloader interface. Writing multiple times is simply so there
+        # is enough input to create a pseduo-batch without errors due to
+        # insufficient input; the batch itself is truncated later and not used.
+        # This is a hack.
+        train_path = Path("/tmp/train_tokens.txt")
+        train_path.write_text(
+            "\n".join(" ".join(tokens) for _ in range(50)), encoding="utf8"
+        )
+
+        batched_input, _ = create_seq_dataloaders(
+            train_path,
+            "cpu",
+            vocab,
+            spacy_en,
+            batch_size=1,
+            max_padding=72,
+            is_distributed=False,
+            is_development=True,
+        )
+        # Get only the first item from the batch
+        b = next(iter(batched_input))
+        rb = Batch(b[0], b[1], pad_idx)
+        log.info(
+            f">> rb.src={rb.src} rb.src.size()={rb.src.size()} rb.src_mask.size()={rb.src_mask.size()}"
+        )
+        # src_tokens = [vocab_src.get_itos()[x] for x in rb.src[0] if x != pad_idx]
+        return rb
+
+    def get_next_token() -> str:
+        token = ""
+        while True:
+            token = input(
+                "Enter next token, lowercased, or '</s>' to terminate sequence: "
+            )
+            if token not in vocab and token != "</s>":
+                print(f"Token not found in vocab: {token}. Retry.")
+                continue
+            return token
+
+    model.ensure_inference_mode()
+
+    # he spent most of his working life as a carpenter and drywall hanger but as a writer was compared with cormac mccarthy and william faulkner
+    tgt_output = ""
+    next_token_index = 1
+    while True:
+        tokens = get_tokens()
+        batch = get_batch(tokens)
+
+        # Get the encoded output
+        encoder_output = model.encode(batch.src, batch.src_mask)
+        # TODO: an interesting visualization would be to show the attentional
+        # focus on different words, i.e. a symmetric matrix heat map.
+
+        print(
+            "Input encoded. Now enter target output one at a time, for which ranked next-tokens will be shown."
+        )
+        while True:
+            # Get a token from the user, one at a time
+            token = get_next_token()
+            if token == "</s>":
+                break
+
+            tgt_output = f"{tgt_output} {token}".strip()
+            print("New tgt_output: ", tgt_output)
+            # Convert the tgt sequence to a tensor tgt and tgt mask
+            tgt_tokens = tgt_output.split()
+            tgt_ids = vocab(tgt_tokens)
+            tgt = to_padded_tensor(
+                tgt_ids,
+                tgt_tokens,
+                max_padding=128,
+                bs_id=vocab.get_stoi()["<s>"],
+                eos_id=vocab.get_stoi()["</s>"],
+                pad_id=vocab.get_stoi()["<blank>"],
+                device="cpu",
+            ).unsqueeze(0)
+            tgt_mask = Batch.make_std_mask(tgt, pad_idx).type_as(tgt)
+            # @out is size (b x cur_len x d_model), where cur_len is the current
+            # len of the sequence as it is extended one at a time. Note it is
+            # the same size as ys, since we haven't predicted the next word
+            # until below. The output is still in embedding-space.
+            #
+            # Append token to current sequence
+            # log.debug(
+            #     f"encoded_src={encoder_output.size()} src_mask={batch.src_mask.size()} ys={tgt.size()} ys_mask={tgt_mask.size()}"
+            # )
+            # exit()
+
+            # DEBUG:root:encoded_src=torch.Size([1, 72, 512]) src_mask=torch.Size([1, 1, 72]) ys=torch.Size([128]) ys_mask=torch.Size([1, 128, 128])
+            decoder_output = model.decode(encoder_output, batch.src_mask, tgt, tgt_mask)
+            # The generator accepts (b x seqlen x d_model), projects it and runs
+            # through log-softmax to return (b x seqlen x vocab_size). Each
+            # batch index b=i contains a sequence of softmax distributions of
+            # size (seqlen x vocab_size), thus the max value at each seqlen=j
+            # index is the highest probability word; the index k into vocab_size
+            # of that value is the word/class id.
+            prob = model.generator(decoder_output)
+            # log.info(
+            #     f"beam_decode: ys={beam_item.ys.size()} ys_mask={ys_mask.size()} out={out.size()} prob={prob.size()}"
+            # )
+            print(f"prob={prob.size()}")
+
+            # Retrieve top next-words across entire seqlen. By the pigeonhole
+            # principle, this ensures total coverage of possible next-best
+            # values. You could implement heuristics here to weight k by current
+            # term's likelihood. The sorted=False is because the beam is sorted
+            # later.
+            softmax_dim = 2
+            k = 20
+            probs, next_word_indices = torch.topk(
+                prob, k=k, dim=softmax_dim, sorted=False
+            )
+            prob_word_id_tuples = [
+                (prob.item(), next_word_index.item())
+                for (prob, next_word_index) in zip(
+                    probs[0, next_token_index, :],
+                    next_word_indices[0, next_token_index, :],
+                )
+            ]
+            # The tensors are out=torch.Size([64, 72, 512])
+            # probs=torch.Size([64, 72, 30]) next_word_indices=torch.Size([64,
+            # 72, 30]). Accordingly, probs contains the actual probability, and
+            # next_word_indices their corresponding indices.
+            # log.info(
+            #     f"beam_decode: out={out.size()}  probs={probs.size()}  next_word_indices={next_word_indices.size()}"
+            # )
+
+            # Per log-softmax, the probs are negative values, and the largest
+            # (nearest zero) is the highest prob. Likewise, log-prob addition
+            # represents multiplication back in non-log space, hence adding
+            # these cumulatively represents the total sequence prob, which is a
+            # product.
+            top_outputs = [
+                f"{prob:12.06f} {vocab.get_itos()[next_word_index]}"
+                for prob, next_word_index in prob_word_id_tuples
+            ]
+            print(f"Top {k} output tokens:\n{"\n".join(top_outputs)}")
+            next_token_index += 1
 
 
 def check_outputs(

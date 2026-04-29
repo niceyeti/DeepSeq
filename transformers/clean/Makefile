@@ -113,6 +113,15 @@ check-outputs:
 		python check_outputs_driver.py -c $(CONFIG_PATH)
 
 
+# This recipe uses the encoder-decoder arhictecture to accept source (encoder)
+# input from the user, then generate target outputs one at a time.
+.PHONY: interactive-decoding
+interactive-decoding:
+	source .venv/bin/activate && \
+	LOG_LEVEL=$(LOG_LEVEL) \
+		python interactive_driver.py -c $(CONFIG_PATH)
+
+
 # Runs the unit-tests. Independently and fast-running
 # test go here.
 .PHONY: unit-tests
