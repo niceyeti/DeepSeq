@@ -52,17 +52,17 @@ Beginning check-outputs with {args.config} config:
         )
     vocab = architecture.load_vocab(vocab_path)
 
-    device = torch.device(config.device)
-    training_dataloader, validation_dataloader = architecture.create_seq_dataloaders(
-        config.data_path,
-        device,
-        vocab,
-        spacy_en,
-        batch_size=config.batch_size,
-        max_padding=config.max_padding,
-        is_distributed=False,
-        is_development=config.is_development(),
-    )
+    # device = torch.device(config.device)
+    # training_dataloader, validation_dataloader = architecture.create_seq_dataloaders(
+    #     config.data_path,
+    #     device,
+    #     vocab,
+    #     spacy_en,
+    #     batch_size=config.batch_size,
+    #     max_padding=config.max_padding,
+    #     is_distributed=False,
+    #     is_development=config.is_development(),
+    # )
 
     # Src and tgt vocab length are the same because I've been training a
     # Transformer on its own input sequences as output, for single language

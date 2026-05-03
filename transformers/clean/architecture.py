@@ -6,6 +6,8 @@ import math
 import copy
 import time
 import datetime
+import re
+
 
 from dataclasses import dataclass
 from typing import Generator as TGenerator, Tuple, List, Callable
@@ -163,12 +165,30 @@ class SublayerConnection(nn.Module):
 class EncoderLayer(nn.Module):
     "Encoder is made up of self-attn and feed forward (defined below)"
 
-    def __init__(self, size, self_attn, feed_forward, dropout):
+    def __init__(
+        self,
+        size,
+        self_attn,
+        feed_forward,
+        dropout,
+        attn_score_fn: Callable[[torch.tensor, torch.tensor], None] | None = None,
+    ):
+        """
+        Args:
+            * size: the size
+            * self_attn: the self-attention structure of an encoder layer
+            * feed_forward: the ff network
+            * dropout: an optional dropout layer
+            * attn_score_fn: this is an optional callback by which to introspect
+              the score values (the softmaxed Q/K product matrix) such as for
+              cool visualization of token relationships.
+        """
         super(EncoderLayer, self).__init__()
-        self.self_attn = self_attn
+        self.self_attn: MultiHeadedAttention = self_attn
         self.feed_forward = feed_forward
         self.sublayer = clones(SublayerConnection(size, dropout), 2)
         self.size = size
+        self.attn_score_fn = attn_score_fn
 
     def forward(self, x, mask):
         """Follow Figure 1 (left) for connections.
@@ -177,11 +197,25 @@ class EncoderLayer(nn.Module):
             * x: tensor of size (b x seq_len x d_model)
             * mask: tensor of size (b x 1 x seq_len)
         """
-        # global log
         log.info(f"EncoderLayer forward:  x dim {x.size()}  mask dim {mask.size()}")
+
+        def forward_driver(x_in: torch.Tensor) -> torch.Tensor:
+            """This function just loops in the attention callback to pass
+            attention score upward for vis.
+            """
+            x_out = self.self_attn(x_in, x_in, x_in, mask)
+
+            if self.attn_score_fn is not None and self.self_attn.attn is not None:
+                # Optionally calls back the caller with attention scores for
+                # visualization, etc.
+                self.attn_score_fn(self.self_attn.attn)
+
+            return x_out
+
         # Encode the input through attention function, then adding/norming
         # through sublayer.
-        x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
+        # x = self.sublayer[0](x, lambda x: self.self_attn(x, x, x, mask))
+        x = self.sublayer[0](x, forward_driver)
         log.info(f"encoder x dim: {x.size()}")
         # Run the encoded output through feed-forward layer for final output.
         x_final = self.sublayer[1](x, self.feed_forward)
@@ -193,16 +227,31 @@ class EncoderLayer(nn.Module):
 class DecoderLayer(nn.Module):
     "Decoder is made of self-attn, src-attn, and feed forward (defined below)"
 
-    def __init__(self, size, self_attn, src_attn, feed_forward, dropout):
+    def __init__(
+        self,
+        size,
+        self_attn,
+        src_attn,
+        feed_forward,
+        dropout,
+        self_attn_score_fn: Callable[[torch.tensor, torch.tensor], None] | None = None,
+        cross_attn_score_fn: Callable[[torch.tensor, torch.tensor], None] | None = None,
+    ):
         super(DecoderLayer, self).__init__()
         self.size = size
-        self.self_attn = self_attn
-        self.src_attn = src_attn
+        self.self_attn: MultiHeadedAttention = self_attn
+        self.src_attn: MultiHeadedAttention = src_attn
         self.feed_forward = feed_forward
         # There are 3 fully connected sublayers in the decoder: after
         # self-attention, after the src (encoder) attention, and finally after
         # decoder output.
         self.sublayer = clones(SublayerConnection(size, dropout), 3)
+        self.self_attn_score_fn: Callable[[torch.tensor, torch.tensor], None] | None = (
+            self_attn_score_fn
+        )
+        self.cross_attn_score_fn: (
+            Callable[[torch.tensor, torch.tensor], None] | None
+        ) = cross_attn_score_fn
 
     def forward(self, target, memory, src_mask, tgt_mask):
         """The decoder always takes as input output target and memory from the
@@ -211,15 +260,41 @@ class DecoderLayer(nn.Module):
         # Encode the target using self-attention and masking to prevent
         # look-ahead, before adding/norming this to the initial target input via
         # the sublayer.
-        masked_tgt_attn = self.sublayer[0](
-            target, lambda tgt: self.self_attn(tgt, tgt, tgt, tgt_mask)
-        )
+
+        def self_attn_driver(tgt_in: torch.Tensor) -> torch.Tensor:
+            """This function just loops in the attention callback to pass
+            attention score upward for vis.
+            """
+            tgt_self_attn = self.self_attn(tgt_in, tgt_in, tgt_in, tgt_mask)
+
+            if self.self_attn_score_fn is not None and self.self_attn.attn is not None:
+                # Optionally calls back the caller with attention scores for
+                # visualization, etc.
+                self.self_attn_score_fn(self.self_attn.attn)
+
+            return tgt_self_attn
+
+        def cross_attn_driver(self_attn_out: torch.Tensor) -> torch.Tensor:
+            """This function just loops in the attention callback to pass
+            attention score upward for vis.
+            """
+            cross_attn = self.src_attn(self_attn_out, memory, memory, src_mask)
+
+            if self.cross_attn_score_fn is not None and self.src_attn.attn is not None:
+                # Optionally calls back the caller with attention scores for
+                # visualization, etc.
+                self.cross_attn_score_fn(self.src_attn.attn)
+
+            return cross_attn
+
+        masked_tgt_attn = self.sublayer[0](target, self_attn_driver)
         # Encoder the target again, this time taking the encoded input as the
         # query vector by which to learn translation features tgt*input, then
         # again adding/norming this to the initial layer input.
-        src_attn = self.sublayer[1](
-            masked_tgt_attn, lambda src: self.src_attn(src, memory, memory, src_mask)
-        )
+        # src_attn = self.sublayer[1](
+        #     masked_tgt_attn, lambda src: self.src_attn(src, memory, memory, src_mask)
+        # )
+        src_attn = self.sublayer[1](masked_tgt_attn, cross_attn_driver)
         # Finally, run the encoded input through a feed forward network.
         return self.sublayer[2](src_attn, self.feed_forward)
 
@@ -801,7 +876,7 @@ def attention(query, key, value, mask=None, dropout=None, module_name: str = "")
     # Apply dropout to the score outputs, randomly assigning zero to entries of
     # the matrix.
     if dropout is not None:
-        p_attn = dropout(p_attn)
+        p_attn_dropped = dropout(p_attn)
 
     """Finally, multiply the weighted scores: ignoring heads, batches, and the
     division of d_model by num heads, p_attn is (seqlen x seqlen) and value is
@@ -815,7 +890,7 @@ def attention(query, key, value, mask=None, dropout=None, module_name: str = "")
     set in stone, it is a function dependency and an opportunity for hacking
     other representations.
     """
-    return torch.matmul(p_attn, value), p_attn
+    return torch.matmul(p_attn_dropped, value), p_attn
 
 
 class MultiHeadedAttention(nn.Module):
@@ -3263,24 +3338,6 @@ def interact(
     pad_idx=2,
     eos_string="</s>",
 ):
-    # TODO: move me to some vocab util wrapper of Vocab.
-    def output_to_sequence(out: torch.Tensor) -> str:
-        """A small driver to convert an output tensor of token ids back to
-        words.
-
-        Args:
-            * out: a tensor of size (seqlen)
-        """
-        log.info(f"out={out.size()}")
-        return (
-            " ".join([vocab.get_itos()[x] for x in out if x != pad_idx]).split(
-                eos_string, 1
-            )[0]
-            + eos_string
-        )
-
-    import re
-
     def get_tokens() -> List[str]:
         while True:
             print(
@@ -3332,23 +3389,35 @@ def interact(
         log.info(
             f">> rb.src={rb.src} rb.src.size()={rb.src.size()} rb.src_mask.size()={rb.src_mask.size()}"
         )
-        # src_tokens = [vocab_src.get_itos()[x] for x in rb.src[0] if x != pad_idx]
         return rb
 
     def get_next_token() -> str:
         token = ""
         while True:
             token = input(
-                "Enter next token, lowercased, or '</s>' to terminate sequence: "
+                f"Enter next token, lowercased, or '{eos_string}' to terminate sequence: "
             )
-            if token not in vocab and token != "</s>":
+            if token not in vocab and token != eos_string:
                 print(f"Token not found in vocab: {token}. Retry.")
                 continue
             return token
 
     model.ensure_inference_mode()
 
-    # he spent most of his working life as a carpenter and drywall hanger but as a writer was compared with cormac mccarthy and william faulkner
+    print("""
+###############################################################################
+# Interactive encoding-decoding mode: input a complete token sequence for the
+# encoder to encode, then input one token at a time for the decoder to generate
+# tokens. This allows subjective observation of the output distribution and
+# token rankings. Note that I think something simpler could be implemented in
+# any inference code using optional user-input hooks. Using pieces of a training
+# example is useful to show what the model inherently knows from training. Here
+# is one:
+#
+# 'he spent most of his working life as a carpenter and drywall hanger, but as
+# a writer was compared with cormac mccarthy and william faulkner'
+""")
+
     tgt_output = ""
     next_token_index = 1
     while True:
@@ -3366,7 +3435,7 @@ def interact(
         while True:
             # Get a token from the user, one at a time
             token = get_next_token()
-            if token == "</s>":
+            if token == eos_string:
                 break
 
             tgt_output = f"{tgt_output} {token}".strip()
@@ -3440,7 +3509,7 @@ def interact(
             # these cumulatively represents the total sequence prob, which is a
             # product.
             top_outputs = [
-                f"{prob:12.06f} {vocab.get_itos()[next_word_index]}"
+                f"{math.exp(prob):12.08f} {vocab.get_itos()[next_word_index]}"
                 for prob, next_word_index in prob_word_id_tuples
             ]
             print(f"Top {k} output tokens:\n{"\n".join(top_outputs)}")
