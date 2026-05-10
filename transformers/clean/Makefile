@@ -20,7 +20,6 @@ CONFIG_PATH?=./deployment/default_config.jsonc
 # development and testing.
 TEST_MODEL_CONFIG_PATH?=./deployment/model_verification_test_config.jsonc
 
-
 # Use DEBUG to view gritty model outputs, tensor dimensions, etc.
 LOG_LEVEL?=WARNING
 

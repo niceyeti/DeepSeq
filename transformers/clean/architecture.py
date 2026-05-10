@@ -21,6 +21,7 @@ from torchtext.data.functional import to_map_style_dataset
 from torch.utils.data import DataLoader
 from torchtext.vocab import Vocab
 from torchtext.vocab import build_vocab_from_iterator
+from torch.types import Number
 import torchtext.datasets as datasets
 from torch.utils.data.distributed import DistributedSampler
 import torchinfo
@@ -1883,6 +1884,7 @@ def beam_decode(
     start_id: int,
     beam_length: int,
     pad_id: int,
+    sample_output: Callable[[torch.Tensor, int, int, int], List[Tuple[Number, Number]]],
     output_callback: Callable[[torch.Tensor, int], None] = lambda _: None,
 ) -> List[torch.Tensor]:
     """beam_decode is the same as greedy_decode except that we sample the top
@@ -1948,6 +1950,29 @@ def beam_decode(
         * beam_length: the number of items to hold in the beam, an optimization
           hyper-parameter. Note this is not smooth: lit suggest 3-6 is optimal,
           and likewise increasing beam length can end up shortening sequences.
+        * sample_output: the injected function by which to sample the output
+          softmax distribution at each time step. This is
+          over-specified/generalized, but is provided the (b x v x seqlen)
+          output distribution, the time step (index into ) to sample, the
+          softmax dimension. It must return a list of tuples whose first item is
+          a vocab id and the second is a probability or score by which to extend
+          each beam-item with a word id and add the probability/score before
+          sorting the beam. For reference, the implementation shown here samples
+          the top-k most likely tokens in the output distribution:
+            ```probs, next_word_indices = torch.topk(
+                prob, k=beam_length, dim=softmax_dim, sorted=False
+            )
+            prob_word_id_tuples: List[Tuple[Number, Number]] = [
+                (prob.item(), next_word_index.item()) for (prob,
+                next_word_index) in zip(
+                    probs[0, next_token_index, :], next_word_indices[0,
+                    next_token_index, :],
+                )
+            ]
+            ```
+            prob_word_id_tuples: List[Tuple[Number, Number]] = sample_output(
+                prob, beam_length, softmax_dim=softmax_dim
+            )
 
     Returns: a list of tensors containing sequences of token-ids, with the
     highest probability sequence first.
@@ -2073,24 +2098,25 @@ def beam_decode(
             # next-best values. You could implement heuristics here to weight k
             # by current term's likelihood. The sorted=False is because the beam
             # is sorted later.
+            # softmax_dim = 2
+            # probs, next_word_indices = torch.topk(
+            #     prob, k=beam_length, dim=softmax_dim, sorted=False
+            # )
+            # prob_word_id_tuples: List[Tuple[Number, Number]] = [
+            #     (prob.item(), next_word_index.item())
+            #     for (prob, next_word_index) in zip(
+            #         probs[0, next_token_index, :],
+            #         next_word_indices[0, next_token_index, :],
+            #     )
+            # ]
             softmax_dim = 2
-            probs, next_word_indices = torch.topk(
-                prob, k=beam_length, dim=softmax_dim, sorted=False
+            prob_word_id_tuples: List[Tuple[Number, Number]] = sample_output(
+                prob,
+                next_token_index,
+                softmax_dim,
+                beam_length,
             )
-            prob_word_id_tuples = [
-                (prob.item(), next_word_index.item())
-                for (prob, next_word_index) in zip(
-                    probs[0, next_token_index, :],
-                    next_word_indices[0, next_token_index, :],
-                )
-            ]
-            # The tensors are out=torch.Size([64, 72, 512])
-            # probs=torch.Size([64, 72, 30]) next_word_indices=torch.Size([64,
-            # 72, 30]). Accordingly, probs contains the actual probability, and
-            # next_word_indices their corresponding indices.
-            log.info(
-                f"beam_decode: out={out.size()}  probs={probs.size()}  next_word_indices={next_word_indices.size()}"
-            )
+
             # TODO: loosely, this is where one could combine beam length b and
             # depth-first search depth d, as follows. For each item in the beam,
             # decode twice forward: find the top-k most likely words for the
@@ -2113,15 +2139,15 @@ def beam_decode(
             # represents multiplication back in non-log space, hence adding
             # these cumulatively represents the total sequence prob, which is a
             # product.
-            for prob, next_word_index in prob_word_id_tuples:
+            for prob, next_word_id in prob_word_id_tuples:
                 log.info(
-                    f"ys={beam_item.ys.size()} next_word_index={next_word_index} log-prob={prob}"
+                    f"ys={beam_item.ys.size()} next_word_id={next_word_id} log-prob={prob}"
                 )
                 # Ys contains the current word sequence, with padding covering
                 # remaining positions. So simply over-write the next word
                 # position's padding with the next word's id.
                 next_ys = beam_item.ys.detach().clone()
-                next_ys[0, next_token_index + 1] = next_word_index
+                next_ys[0, next_token_index + 1] = next_word_id
 
                 log.info(f"Next ys: {next_ys.size()} prob={prob}")
 
@@ -3521,6 +3547,9 @@ def check_outputs(
     model,
     vocab_src,
     vocab_tgt,
+    sample_outputs: Callable[
+        [torch.Tensor, int, int, int], List[Tuple[Number, Number]]
+    ],
     n_examples=7,
     pad_idx=2,
     eos_string="</s>",
@@ -3623,6 +3652,7 @@ def check_outputs(
             start_id=vocab_src["<s>"],
             beam_length=beam_len,
             pad_id=pad_idx,
+            sample_output=sample_outputs,
             output_callback=output_fn,
         )
 
